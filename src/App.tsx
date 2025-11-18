@@ -651,6 +651,11 @@ export default function App() {
               // Refresh Strava connection status
               setStravaConnected(isAccountConnected('strava'));
             }}
+            onAccountDeleted={() => {
+              // Account was deleted, sign out and reset state
+              setUser(null);
+              toast.success('Your account has been deleted');
+            }}
           />
         )}
 

@@ -78,6 +78,47 @@ export async function signOut() {
 }
 
 /**
+ * Delete the current user's account
+ * This will delete both the auth user and their profile (cascade delete)
+ * Uses Supabase Edge Function for secure deletion with admin privileges
+ */
+export async function deleteAccount() {
+  try {
+    // Get the current session to get the access token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      throw new Error('Not authenticated');
+    }
+
+    // Call the Edge Function to delete the user
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const response = await fetch(`${supabaseUrl}/functions/v1/delete-user-account`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': supabaseAnonKey || '',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to delete account');
+    }
+
+    // Sign out after deletion
+    await supabase.auth.signOut();
+    
+    return { error: null };
+  } catch (error: any) {
+    return { error };
+  }
+}
+
+/**
  * Get the current session
  */
 export async function getSession() {
