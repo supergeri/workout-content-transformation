@@ -38,4 +38,5 @@ build
 
 # Supabase
 .supabase/.temp
+supabase/.temp
 
