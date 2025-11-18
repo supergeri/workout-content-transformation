@@ -7,10 +7,22 @@ import { Badge } from './ui/badge';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from './ui/alert-dialog';
 import { User, Mail, CreditCard, Bell, Shield, Smartphone, Watch, Bike, ArrowLeft, Link2 } from 'lucide-react';
 import { DeviceId } from '../lib/devices';
 import { toast } from 'sonner@2.0.3';
 import { LinkedAccounts } from './LinkedAccounts';
+import { deleteAccount } from '../lib/auth';
 
 type Props = {
   user: {
@@ -23,15 +35,17 @@ type Props = {
   };
   onBack: () => void;
   onAccountsChange?: () => void;
+  onAccountDeleted?: () => void;
 };
 
-export function UserSettings({ user, onBack, onAccountsChange }: Props) {
+export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted }: Props) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [selectedDevices, setSelectedDevices] = useState<DeviceId[]>(user.selectedDevices);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(false);
   const [autoSync, setAutoSync] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSave = () => {
     toast.success('Settings saved successfully');
@@ -42,6 +56,22 @@ export function UserSettings({ user, onBack, onAccountsChange }: Props) {
       setSelectedDevices(selectedDevices.filter(d => d !== device));
     } else {
       setSelectedDevices([...selectedDevices, device]);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      const { error } = await deleteAccount();
+      if (error) {
+        throw error;
+      }
+      toast.success('Account deleted successfully');
+      onAccountDeleted?.();
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      toast.error(error.message || 'Failed to delete account. Please try again.');
+      setIsDeleting(false);
     }
   };
 
@@ -313,9 +343,33 @@ export function UserSettings({ user, onBack, onAccountsChange }: Props) {
           
           <Separator />
           
-          <Button variant="destructive" className="w-full">
-            Delete Account
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" className="w-full" disabled={isDeleting}>
+                {isDeleting ? 'Deleting...' : 'Delete Account'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete your account
+                  and remove all your data from our servers. Your profile, workout history,
+                  and all associated data will be permanently deleted.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteAccount}
+                  disabled={isDeleting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeleting ? 'Deleting...' : 'Yes, delete my account'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
 
