@@ -14,17 +14,25 @@ type Props = {
 };
 
 export function Analytics({ user, history }: Props) {
-  const stats = getWorkoutStats();
-
+  // Ensure history is an array
+  const safeHistory = Array.isArray(history) ? history : [];
+  const stats = getWorkoutStats(safeHistory);
+  
   // Weekly activity data
   const weeklyData = Array.from({ length: 7 }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - i));
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
     
-    const workoutsOnDay = history.filter(item => {
-      const itemDate = new Date(item.createdAt);
-      return itemDate.toDateString() === date.toDateString();
+    const workoutsOnDay = safeHistory.filter(item => {
+      if (!item.createdAt) return false;
+      try {
+        const itemDate = new Date(item.createdAt);
+        if (isNaN(itemDate.getTime())) return false;
+        return itemDate.toDateString() === date.toDateString();
+      } catch {
+        return false;
+      }
     }).length;
 
     return {
@@ -49,9 +57,15 @@ export function Analytics({ user, history }: Props) {
     const startOfWeek = new Date(date);
     startOfWeek.setDate(date.getDate() - 7);
     
-    const workoutsInWeek = history.filter(item => {
-      const itemDate = new Date(item.createdAt);
-      return itemDate >= startOfWeek && itemDate <= date;
+    const workoutsInWeek = safeHistory.filter(item => {
+      if (!item.createdAt) return false;
+      try {
+        const itemDate = new Date(item.createdAt);
+        if (isNaN(itemDate.getTime())) return false;
+        return itemDate >= startOfWeek && itemDate <= date;
+      } catch {
+        return false;
+      }
     }).length;
 
     return {

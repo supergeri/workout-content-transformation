@@ -16,17 +16,26 @@ type Props = {
 export function WorkoutHistory({ history, onLoadWorkout, onDeleteWorkout, onEnhanceStrava }: Props) {
   const stravaConnected = isAccountConnected('strava');
   
+  // Ensure history is an array
+  const safeHistory = Array.isArray(history) ? history : [];
+  
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (!dateString) return 'Unknown date';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid date';
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return `${diffDays} days ago`;
+      
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (error) {
+      return 'Invalid date';
+    }
   };
 
   const getDeviceIcon = (device: string) => {
@@ -41,7 +50,7 @@ export function WorkoutHistory({ history, onLoadWorkout, onDeleteWorkout, onEnha
     }
   };
 
-  if (history.length === 0) {
+  if (safeHistory.length === 0) {
     return (
       <div className="text-center py-16">
         <Dumbbell className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-20" />
@@ -61,15 +70,23 @@ export function WorkoutHistory({ history, onLoadWorkout, onDeleteWorkout, onEnha
       <div>
         <h2 className="text-2xl mb-2">Workout History</h2>
         <p className="text-muted-foreground">
-          {history.length} workout{history.length !== 1 ? 's' : ''} saved
+          {safeHistory.length} workout{safeHistory.length !== 1 ? 's' : ''} saved
         </p>
       </div>
 
       <ScrollArea className="h-[calc(100vh-250px)]">
         <div className="grid gap-4 pr-4">
-          {history.map((item) => {
-            const exerciseCount = item.workout.blocks.reduce(
-              (sum, block) => sum + block.supersets.reduce((s, ss) => s + ss.exercises.length, 0),
+          {safeHistory.map((item) => {
+            const exerciseCount = (item.workout.blocks || []).reduce(
+              (sum, block) => {
+                // Handle both old format (exercises directly on block) and new format (exercises in supersets)
+                if (block?.supersets && block.supersets.length > 0) {
+                  return sum + block.supersets.reduce((s, ss) => s + (ss?.exercises?.length || 0), 0);
+                } else if (block?.exercises) {
+                  return sum + (block.exercises.length || 0);
+                }
+                return sum;
+              },
               0
             );
 
@@ -78,7 +95,7 @@ export function WorkoutHistory({ history, onLoadWorkout, onDeleteWorkout, onEnha
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="text-lg">{item.workout.title}</CardTitle>
+                      <CardTitle className="text-lg">{item.workout.title || 'Untitled Workout'}</CardTitle>
                       <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
@@ -117,9 +134,9 @@ export function WorkoutHistory({ history, onLoadWorkout, onDeleteWorkout, onEnha
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>{item.workout.blocks.length} blocks</span>
+                      <span>{item.workout.blocks?.length || 0} blocks</span>
                       <span>{exerciseCount} exercises</span>
-                      {item.sources.length > 0 && (
+                      {item.sources && item.sources.length > 0 && (
                         <span>{item.sources.length} sources</span>
                       )}
                     </div>
@@ -146,7 +163,7 @@ export function WorkoutHistory({ history, onLoadWorkout, onDeleteWorkout, onEnha
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = url;
-                              a.download = `${item.workout.title.replace(/\s+/g, '_')}.${
+                              a.download = `${(item.workout.title || 'workout').replace(/\s+/g, '_')}.${
                                 item.device === 'garmin' ? 'fit' : item.device === 'apple' ? 'plist' : 'zwo'
                               }`;
                               a.click();
