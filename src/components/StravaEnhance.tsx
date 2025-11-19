@@ -31,9 +31,9 @@ import {
 import { toast } from 'sonner@2.0.3';
 import { Alert, AlertDescription } from './ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { getStravaActivities, updateStravaActivity, getStravaAthlete, StravaActivity } from '../lib/strava-api';
+import { getStravaActivities, updateStravaActivity, getStravaAthlete, StravaActivity, StravaTokenExpiredError, StravaUnauthorizedError, initiateStravaOAuth, checkAndRefreshStravaToken } from '../lib/strava-api';
 import { useClerkUser } from '../lib/clerk-auth';
-import { getLinkedAccounts } from '../lib/linked-accounts';
+import { getLinkedAccounts, isAccountConnected } from '../lib/linked-accounts';
 
 type Step = 'select-activity' | 'add-details' | 'success';
 
@@ -64,6 +64,7 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const errorShownRef = useRef(false);
+  const isReauthorizingRef = useRef(false);
 
   // Fetch Strava activities when component mounts
   useEffect(() => {
@@ -75,6 +76,10 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
 
       // Reset error shown flag for new profileId
       errorShownRef.current = false;
+      isReauthorizingRef.current = false;
+      
+      // Store return path for after reauthorization
+      sessionStorage.setItem('strava_return_path', window.location.pathname + window.location.search);
 
       try {
         // Get linked accounts to check if Strava is connected
@@ -90,22 +95,114 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
           return;
         }
 
-        // Use profileId as userId for API calls (strava-sync-api stores tokens by userId)
-        // The API will handle token lookup and refresh automatically
-        // Fetch last 5 activities from Strava using profileId as userId
+        // Check if token is valid and refresh if needed
+        // This will automatically refresh the token if it's expired but refresh token is valid
+        const tokenValid = await checkAndRefreshStravaToken(profileId);
+        
+        if (!tokenValid) {
+          // Token expired and refresh failed - need reauthorization
+          // Check if account is still marked as connected in linked_accounts
+          const isConnected = await isAccountConnected(profileId, 'strava');
+          
+          if (isConnected) {
+            // Account is connected but token expired - auto-trigger reauthorization
+            isReauthorizingRef.current = true;
+            if (!errorShownRef.current) {
+              toast.info('Strava token expired. Reauthorizing...', {
+                duration: 3000,
+              });
+              errorShownRef.current = true;
+            }
+            
+            // Automatically trigger OAuth reauthorization
+            try {
+              const oauthUrl = await initiateStravaOAuth(profileId);
+              // Store in sessionStorage that we're doing automatic reauthorization
+              sessionStorage.setItem('strava_auto_reauthorize', 'true');
+              window.location.href = oauthUrl;
+              return; // Don't set loading to false, we're redirecting
+            } catch (oauthError: any) {
+              isReauthorizingRef.current = false;
+              console.error('Failed to initiate OAuth reauthorization:', oauthError);
+              // Only show error if it's not a network/redirect issue
+              if (!oauthError.message?.includes('redirect') && !oauthError.message?.includes('network')) {
+                toast.error('Failed to reauthorize Strava. Please go to Settings → Linked Accounts → Reconnect Strava');
+              }
+              setLoadingActivities(false);
+              return;
+            }
+          } else {
+            // Account not connected - user needs to connect first
+            if (!errorShownRef.current) {
+              toast.error('Please connect your Strava account first via OAuth in Settings');
+              errorShownRef.current = true;
+            }
+            setLoadingActivities(false);
+            return;
+          }
+        }
+
+        // Token is valid - fetch activities
         const fetchedActivities = await getStravaActivities(profileId, 5);
         setActivities(fetchedActivities);
       } catch (error: any) {
         console.error('Failed to load Strava activities:', error);
         
-        // Provide helpful error message for token-related errors (only show once)
-        if (!errorShownRef.current) {
-          if (error.message?.includes('No tokens found')) {
-            toast.error('Please complete Strava OAuth connection. Go to Settings → Linked Accounts → Connect Strava');
-          } else {
-            toast.error(`Failed to load activities: ${error.message || 'Unknown error'}`);
+        // Handle token expiration errors
+        if (error instanceof StravaTokenExpiredError || error instanceof StravaUnauthorizedError) {
+          // Check if account is connected
+          try {
+            const isConnected = await isAccountConnected(profileId, 'strava');
+            
+            if (isConnected) {
+              // Account is connected but token expired - auto-trigger reauthorization
+              isReauthorizingRef.current = true;
+              if (!errorShownRef.current) {
+                toast.info('Strava token expired. Reauthorizing...', {
+                  duration: 3000,
+                });
+                errorShownRef.current = true;
+              }
+              
+              // Automatically trigger OAuth reauthorization
+              try {
+                const oauthUrl = await initiateStravaOAuth(profileId);
+                // Store in sessionStorage that we're doing automatic reauthorization
+                sessionStorage.setItem('strava_auto_reauthorize', 'true');
+                window.location.href = oauthUrl;
+                return; // Don't set loading to false, we're redirecting
+              } catch (oauthError: any) {
+                isReauthorizingRef.current = false;
+                console.error('Failed to initiate OAuth reauthorization:', oauthError);
+                // Only show error if it's not a network/redirect issue
+                if (!oauthError.message?.includes('redirect') && !oauthError.message?.includes('network')) {
+                  toast.error('Failed to reauthorize Strava. Please go to Settings → Linked Accounts → Reconnect Strava');
+                }
+              }
+            } else {
+              // Account not connected
+              if (!errorShownRef.current) {
+                toast.error('Please connect your Strava account first via OAuth in Settings');
+                errorShownRef.current = true;
+              }
+            }
+          } catch (checkError) {
+            console.error('Failed to check account connection:', checkError);
+            if (!errorShownRef.current) {
+              toast.error('Please complete Strava OAuth connection. Go to Settings → Linked Accounts → Connect Strava');
+              errorShownRef.current = true;
+            }
           }
-          errorShownRef.current = true;
+        } else {
+          // Other errors
+          if (!errorShownRef.current) {
+            if (error.message?.includes('No tokens found')) {
+              toast.error('Please complete Strava OAuth connection. Go to Settings → Linked Accounts → Connect Strava');
+            } else {
+              toast.error(`Failed to load activities: ${error.message || 'Unknown error'}`);
+            }
+            errorShownRef.current = true;
+          }
         }
       } finally {
         setLoadingActivities(false);
@@ -115,12 +212,21 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
     loadActivities();
   }, [profileId]);
 
-  // Format distance
+  // Format distance (defaults to miles, will use settings eventually)
   const formatDistance = (meters: number) => {
-    if (meters >= 1000) {
-      return `${(meters / 1000).toFixed(2)} km`;
+    // Convert meters to miles (1 mile = 1609.34 meters)
+    const miles = meters / 1609.34;
+    
+    if (miles >= 1) {
+      return `${miles.toFixed(2)} mi`;
+    } else if (meters >= 100) {
+      // For distances less than 1 mile but >= 100m, show in feet
+      const feet = meters * 3.28084;
+      return `${Math.round(feet)} ft`;
+    } else {
+      // For very short distances, show in meters
+      return `${Math.round(meters)} m`;
     }
-    return `${meters} m`;
   };
 
   // Format time
@@ -217,6 +323,43 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
     setIsEnhancing(true);
 
     try {
+      // Check if token is valid before attempting to enhance
+      const tokenValid = await checkAndRefreshStravaToken(profileId);
+      
+      if (!tokenValid) {
+        // Token expired - check if account is connected and auto-reauthorize
+        const isConnected = await isAccountConnected(profileId, 'strava');
+        
+        if (isConnected) {
+          isReauthorizingRef.current = true;
+          toast.info('Strava token expired. Reauthorizing...', {
+            duration: 3000,
+          });
+          
+          // Automatically trigger OAuth reauthorization
+          try {
+            const oauthUrl = await initiateStravaOAuth(profileId);
+            // Store in sessionStorage that we're doing automatic reauthorization
+            sessionStorage.setItem('strava_auto_reauthorize', 'true');
+            window.location.href = oauthUrl;
+            return; // Don't set isEnhancing to false, we're redirecting
+          } catch (oauthError: any) {
+            isReauthorizingRef.current = false;
+            console.error('Failed to initiate OAuth reauthorization:', oauthError);
+            // Only show error if it's not a network/redirect issue
+            if (!oauthError.message?.includes('redirect') && !oauthError.message?.includes('network')) {
+              toast.error('Failed to reauthorize Strava. Please go to Settings → Linked Accounts → Reconnect Strava');
+            }
+            setIsEnhancing(false);
+            return;
+          }
+        } else {
+          toast.error('Please connect your Strava account first via OAuth in Settings');
+          setIsEnhancing(false);
+          return;
+        }
+      }
+
       // Generate the enhanced description
       const description = generateDescription();
 
@@ -236,7 +379,43 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
       setCurrentStep('success');
     } catch (error: any) {
       console.error('Failed to enhance activity:', error);
-      toast.error(`Failed to enhance activity: ${error.message || 'Unknown error'}`);
+      
+      // Handle token expiration during enhance
+      if (error instanceof StravaTokenExpiredError || error instanceof StravaUnauthorizedError) {
+        try {
+          const isConnected = await isAccountConnected(profileId, 'strava');
+          
+          if (isConnected) {
+            isReauthorizingRef.current = true;
+            toast.info('Strava token expired. Reauthorizing...', {
+              duration: 3000,
+            });
+            
+            // Automatically trigger OAuth reauthorization
+            try {
+              const oauthUrl = await initiateStravaOAuth(profileId);
+              // Store in sessionStorage that we're doing automatic reauthorization
+              sessionStorage.setItem('strava_auto_reauthorize', 'true');
+              window.location.href = oauthUrl;
+              return; // Don't set isEnhancing to false, we're redirecting
+            } catch (oauthError: any) {
+              isReauthorizingRef.current = false;
+              console.error('Failed to initiate OAuth reauthorization:', oauthError);
+              // Only show error if it's not a network/redirect issue
+              if (!oauthError.message?.includes('redirect') && !oauthError.message?.includes('network')) {
+                toast.error('Failed to reauthorize Strava. Please go to Settings → Linked Accounts → Reconnect Strava');
+              }
+            }
+          } else {
+            toast.error('Please connect your Strava account first via OAuth in Settings');
+          }
+        } catch (checkError) {
+          console.error('Failed to check account connection:', checkError);
+          toast.error('Please complete Strava OAuth connection. Go to Settings → Linked Accounts → Connect Strava');
+        }
+      } else {
+        toast.error(`Failed to enhance activity: ${error.message || 'Unknown error'}`);
+      }
     } finally {
       setIsEnhancing(false);
     }

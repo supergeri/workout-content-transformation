@@ -41,6 +41,20 @@ export interface AthleteResponse {
   profile?: string;
 }
 
+export class StravaTokenExpiredError extends Error {
+  constructor(message: string = 'Strava token expired. Reauthorization required.') {
+    super(message);
+    this.name = 'StravaTokenExpiredError';
+  }
+}
+
+export class StravaUnauthorizedError extends Error {
+  constructor(message: string = 'Strava authorization required.') {
+    super(message);
+    this.name = 'StravaUnauthorizedError';
+  }
+}
+
 async function stravaApiCall<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -58,7 +72,21 @@ async function stravaApiCall<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Strava API error: ${response.status} ${response.statusText}`);
+    const errorMessage = error.detail || `Strava API error: ${response.status} ${response.statusText}`;
+    
+    // Detect token expiration errors
+    if (response.status === 401) {
+      // Check if it's a token expiration that requires reauthorization
+      if (errorMessage.includes('No tokens found') || 
+          errorMessage.includes('Authentication failed') ||
+          errorMessage.includes('token expired') ||
+          errorMessage.includes('refresh token')) {
+        throw new StravaTokenExpiredError(errorMessage);
+      }
+      throw new StravaUnauthorizedError(errorMessage);
+    }
+    
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -131,6 +159,25 @@ export async function checkStravaApiHealth(): Promise<boolean> {
     return response.ok;
   } catch (error) {
     return false;
+  }
+}
+
+/**
+ * Check if Strava token is valid and refresh if needed
+ * Returns true if token is valid, false if reauthorization is needed
+ */
+export async function checkAndRefreshStravaToken(userId: string): Promise<boolean> {
+  try {
+    // Try to get athlete info - this will auto-refresh token if needed
+    await getStravaAthlete(userId);
+    return true;
+  } catch (error: any) {
+    if (error instanceof StravaTokenExpiredError || error instanceof StravaUnauthorizedError) {
+      return false; // Reauthorization needed
+    }
+    // For other errors, assume token might be valid but there's another issue
+    // Return true to allow the calling code to handle the error
+    return true;
   }
 }
 

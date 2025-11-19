@@ -29,7 +29,7 @@ import {
   LinkedAccounts,
 } from '../lib/linked-accounts';
 import { useClerkUser } from '../lib/clerk-auth';
-import { initiateStravaOAuth, getStravaAthlete } from '../lib/strava-api';
+import { initiateStravaOAuth, getStravaAthlete, StravaTokenExpiredError, StravaUnauthorizedError } from '../lib/strava-api';
 
 type Props = {
   onAccountsChange?: () => void;
@@ -84,6 +84,9 @@ export function LinkedAccounts({ onAccountsChange }: Props) {
 
       if (provider === 'strava' && status === 'success' && profileId) {
         try {
+          // Check if this was an automatic reauthorization
+          const isAutoReauthorize = sessionStorage.getItem('strava_auto_reauthorize') === 'true';
+          
           // Get athlete info from strava-sync-api (this verifies tokens are stored)
           const athlete = await getStravaAthlete(profileId);
           
@@ -100,17 +103,52 @@ export function LinkedAccounts({ onAccountsChange }: Props) {
           const linkedAccounts = await getLinkedAccounts(profileId);
           setAccounts(linkedAccounts);
 
-          // Clean up URL
+          // Clean up URL and sessionStorage
           window.history.replaceState({}, '', window.location.pathname);
+          sessionStorage.removeItem('strava_auto_reauthorize');
 
-          toast.success('Strava account connected successfully!');
+          // Show success message (less verbose for auto-reauthorization)
+          if (isAutoReauthorize) {
+            toast.success('Strava reauthorized successfully!');
+            // Redirect back to Strava enhance if that's where we came from
+            const returnPath = sessionStorage.getItem('strava_return_path');
+            if (returnPath) {
+              sessionStorage.removeItem('strava_return_path');
+              window.location.href = returnPath;
+              return;
+            }
+          } else {
+            toast.success('Strava account connected successfully!');
+          }
           onAccountsChange?.();
         } catch (error: any) {
           console.error('Failed to sync Strava account after OAuth:', error);
-          toast.error(`Connected to Strava but failed to sync: ${error.message || 'Unknown error'}`);
+          const isAutoReauthorize = sessionStorage.getItem('strava_auto_reauthorize') === 'true';
+          sessionStorage.removeItem('strava_auto_reauthorize');
+          
+          // Only show error if not auto-reauthorizing (to avoid confusing user)
+          if (!isAutoReauthorize) {
+            toast.error(`Connected to Strava but failed to sync: ${error.message || 'Unknown error'}`);
+          } else {
+            // For auto-reauthorization, try to be more helpful
+            if (error instanceof StravaTokenExpiredError || error instanceof StravaUnauthorizedError) {
+              toast.error('Reauthorization completed but token issue persists. Please try again.');
+            } else {
+              toast.error('Reauthorization completed but sync failed. Please refresh the page.');
+            }
+          }
         }
       } else if (provider === 'strava' && status === 'error') {
-        toast.error(`Failed to connect Strava: ${error || 'Unknown error'}`);
+        const isAutoReauthorize = sessionStorage.getItem('strava_auto_reauthorize') === 'true';
+        sessionStorage.removeItem('strava_auto_reauthorize');
+        
+        // Only show error if not auto-reauthorizing or if it's a critical error
+        if (!isAutoReauthorize || error === 'missing_code' || error === 'api_error') {
+          toast.error(`Failed to connect Strava: ${error || 'Unknown error'}`);
+        } else {
+          // For auto-reauthorization, be less verbose
+          toast.error('Reauthorization was cancelled. Please try again.');
+        }
         // Clean up URL
         window.history.replaceState({}, '', window.location.pathname);
       }
