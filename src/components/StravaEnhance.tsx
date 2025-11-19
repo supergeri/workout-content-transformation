@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -63,6 +63,7 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
   
   const [showPreview, setShowPreview] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const errorShownRef = useRef(false);
 
   // Fetch Strava activities when component mounts
   useEffect(() => {
@@ -72,29 +73,21 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
         return;
       }
 
+      // Reset error shown flag for new profileId
+      errorShownRef.current = false;
+
       try {
         // Get linked accounts to check if Strava is connected
         const linkedAccounts = await getLinkedAccounts(profileId);
         const stravaAccount = linkedAccounts.strava;
         
         if (!stravaAccount.connected) {
-          toast.error('Please connect your Strava account first via OAuth in Settings');
+          if (!errorShownRef.current) {
+            toast.error('Please connect your Strava account first via OAuth in Settings');
+            errorShownRef.current = true;
+          }
           setLoadingActivities(false);
           return;
-        }
-
-        // Verify tokens exist by trying to get athlete info first
-        // This will fail with "No tokens found" if OAuth wasn't completed
-        try {
-          await getStravaAthlete(profileId);
-        } catch (verifyError: any) {
-          if (verifyError.message?.includes('No tokens found')) {
-            toast.error('Please complete Strava OAuth connection in Settings. Click "Connect Strava" to authorize.');
-            setLoadingActivities(false);
-            return;
-          }
-          // If it's a different error, continue to try fetching activities
-          console.warn('Could not verify tokens, but will try to fetch activities:', verifyError);
         }
 
         // Use profileId as userId for API calls (strava-sync-api stores tokens by userId)
@@ -105,11 +98,14 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
       } catch (error: any) {
         console.error('Failed to load Strava activities:', error);
         
-        // Provide helpful error message for token-related errors
-        if (error.message?.includes('No tokens found')) {
-          toast.error('Please complete Strava OAuth connection. Go to Settings → Linked Accounts → Connect Strava');
-        } else {
-          toast.error(`Failed to load activities: ${error.message || 'Unknown error'}`);
+        // Provide helpful error message for token-related errors (only show once)
+        if (!errorShownRef.current) {
+          if (error.message?.includes('No tokens found')) {
+            toast.error('Please complete Strava OAuth connection. Go to Settings → Linked Accounts → Connect Strava');
+          } else {
+            toast.error(`Failed to load activities: ${error.message || 'Unknown error'}`);
+          }
+          errorShownRef.current = true;
         }
       } finally {
         setLoadingActivities(false);
@@ -415,29 +411,34 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
           {/* Activity Title */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Activity Title</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm text-muted-foreground">Overwrite</Label>
-                  <Switch
-                    checked={overwriteTitle}
-                    onCheckedChange={setOverwriteTitle}
-                  />
-                </div>
-              </div>
+              <CardTitle className="text-base">Activity Title</CardTitle>
               <CardDescription>
                 {overwriteTitle ? 'Custom title will replace Strava activity name' : 'Keep original Strava activity name'}
               </CardDescription>
             </CardHeader>
-            {overwriteTitle && (
-              <CardContent>
-                <Input
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="e.g., Morning Hyrox Session"
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="overwrite-title" className="text-sm font-medium cursor-pointer">
+                  Overwrite Title
+                </Label>
+                <Switch
+                  id="overwrite-title"
+                  checked={overwriteTitle}
+                  onCheckedChange={setOverwriteTitle}
                 />
-              </CardContent>
-            )}
+              </div>
+              {overwriteTitle && (
+                <div className="space-y-2">
+                  <Label htmlFor="new-title">New Title</Label>
+                  <Input
+                    id="new-title"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="e.g., Morning Hyrox Session"
+                  />
+                </div>
+              )}
+            </CardContent>
           </Card>
 
           {/* Enhancement Fields */}
@@ -638,7 +639,11 @@ export function StravaEnhance({ onClose }: StravaEnhanceProps) {
             ) : (
               <Button
                 onClick={handleEnhance}
-                disabled={isEnhancing || !summary.trim()}
+                disabled={
+                  isEnhancing || 
+                  !summary.trim() || 
+                  (overwriteTitle && !newTitle.trim())
+                }
               >
                 {isEnhancing ? 'Enhancing...' : 'Enhance Activity'}
                 {!isEnhancing && <Check className="w-4 h-4 ml-2" />}
