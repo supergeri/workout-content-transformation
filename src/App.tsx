@@ -3,7 +3,7 @@ import { Toaster, toast } from 'sonner@2.0.3';
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
-import { Dumbbell, Settings, ChevronRight, ArrowLeft, History, BarChart3, Users, Activity } from 'lucide-react';
+import { Dumbbell, Settings, ChevronRight, ArrowLeft, History, BarChart3, Users, Activity, Play } from 'lucide-react';
 import { AddSources, Source } from './components/AddSources';
 import { StructureWorkout } from './components/StructureWorkout';
 import { ValidateMap } from './components/ValidateMap';
@@ -15,6 +15,8 @@ import { UserSettings } from './components/UserSettings';
 import { StravaEnhance } from './components/StravaEnhance';
 import { ProfileCompletion } from './components/ProfileCompletion';
 import { WelcomeGuide } from './components/WelcomeGuide';
+import { FollowAlongWorkouts } from './components/FollowAlongWorkouts';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { WorkoutStructure, ExportFormats, ValidationResponse } from './types/workout';
 import { generateWorkoutStructure as generateWorkoutStructureReal, checkApiHealth } from './lib/api';
 import { generateWorkoutStructure as generateWorkoutStructureMock } from './lib/mock-api';
@@ -36,7 +38,7 @@ type AppUser = User & {
 };
 
 type WorkflowStep = 'add-sources' | 'structure' | 'validate' | 'export';
-type View = 'home' | 'workflow' | 'profile' | 'history' | 'analytics' | 'team' | 'settings' | 'strava-enhance';
+type View = 'home' | 'workflow' | 'profile' | 'history' | 'analytics' | 'team' | 'settings' | 'strava-enhance' | 'follow-along';
 
 export default function App() {
   // Clerk authentication
@@ -45,7 +47,7 @@ export default function App() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [currentView, setCurrentView] = useState<'home' | 'workflow' | 'profile' | 'history' | 'analytics' | 'team' | 'settings' | 'strava-enhance'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'workflow' | 'profile' | 'history' | 'analytics' | 'team' | 'settings' | 'strava-enhance' | 'follow-along'>('home');
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('add-sources');
   const [showStravaEnhance, setShowStravaEnhance] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
@@ -57,6 +59,19 @@ export default function App() {
   const [workoutHistoryList, setWorkoutHistoryList] = useState<any[]>([]);
   const [stravaConnected, setStravaConnected] = useState(false);
   const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
+  const [isEditingFromHistory, setIsEditingFromHistory] = useState(false);
+  const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: '',
+    description: '',
+    onConfirm: () => {},
+  });
 
   const steps: Array<{ id: WorkflowStep; label: string; number: number }> = [
     { id: 'add-sources', label: 'Add Sources', number: 1 },
@@ -320,6 +335,8 @@ export default function App() {
     setExports(null);
     setCurrentStep('add-sources');
     setCurrentView('workflow');
+    setIsEditingFromHistory(false);
+    setEditingWorkoutId(null);
   };
 
   const handleGenerateStructure = async (newSources: Source[]) => {
@@ -560,12 +577,57 @@ export default function App() {
     setExports(historyItem.exports || null); // Restore exports if available
     setCurrentStep('structure'); // Start at structure step for editing
     setCurrentView('workflow');
-    toast.success('Workout opened for editing');
+    setIsEditingFromHistory(true); // Mark as editing from history
+    setEditingWorkoutId(historyItem.id); // Store the workout ID for saving
+    toast.success('Workout opened for editing - you can edit directly or re-validate if needed');
+  };
+
+  // Helper function to check for unsaved changes and show confirmation
+  const checkUnsavedChanges = (onConfirm: () => void): void => {
+    if (currentView === 'workflow' && (workout || sources.length > 0)) {
+      setConfirmDialog({
+        open: true,
+        title: 'Unsaved Changes',
+        description: 'Are you sure you want to leave? Any unsaved changes will be lost.',
+        onConfirm,
+      });
+    } else {
+      onConfirm();
+    }
+  };
+
+  // Helper function to clear workflow state
+  const clearWorkflowState = () => {
+    setWorkout(null);
+    setSources([]);
+    setValidation(null);
+    setExports(null);
+    setCurrentStep('add-sources');
+    setIsEditingFromHistory(false);
+    setEditingWorkoutId(null);
   };
 
   const goBack = () => {
     if (currentStepIndex > 0) {
+      // Check if there's unsaved work
+      if (workout && !isEditingFromHistory) {
+        setConfirmDialog({
+          open: true,
+          title: 'Go Back?',
+          description: 'Your current progress will be saved, but you may need to re-validate.',
+          onConfirm: () => {
+            setCurrentStep(steps[currentStepIndex - 1].id);
+          },
+        });
+        return;
+      }
       setCurrentStep(steps[currentStepIndex - 1].id);
+    } else if (currentView === 'workflow') {
+      // Going back from first step - check for unsaved work
+      checkUnsavedChanges(() => {
+        setCurrentView('home');
+        clearWorkflowState();
+      });
     }
   };
 
@@ -703,41 +765,82 @@ export default function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                  <Dumbbell className="w-5 h-5 text-primary-foreground" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span>AmakaFlow</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {user.subscription}
-                    </Badge>
+                <Button
+                  variant="ghost"
+                  className="p-0 h-auto hover:bg-transparent"
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      setCurrentView('home');
+                      clearWorkflowState();
+                    });
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                      <Dumbbell className="w-5 h-5 text-primary-foreground" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span>AmakaFlow</span>
+                        <Badge variant="secondary" className="text-xs">
+                          {user.subscription}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{user.name}</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">{user.name}</p>
-                </div>
+                </Button>
               </div>
               
               <nav className="hidden md:flex items-center gap-1">
                 <Button
                   variant={currentView === 'workflow' ? 'default' : 'ghost'}
                   size="sm"
-                  onClick={() => setCurrentView('workflow')}
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      setCurrentView('workflow');
+                    });
+                  }}
                 >
                   Workflow
                 </Button>
                 <Button
                   variant={currentView === 'history' ? 'default' : 'ghost'}
                   size="sm"
-                  onClick={() => setCurrentView('history')}
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      clearWorkflowState();
+                      setCurrentView('history');
+                    });
+                  }}
                   className="gap-2"
                 >
                   <History className="w-4 h-4" />
                   History
                 </Button>
                 <Button
+                  variant={currentView === 'follow-along' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      clearWorkflowState();
+                      setCurrentView('follow-along');
+                    });
+                  }}
+                  className="gap-2"
+                >
+                  <Play className="w-4 h-4" />
+                  Follow-Along
+                </Button>
+                <Button
                   variant={currentView === 'analytics' ? 'default' : 'ghost'}
                   size="sm"
-                  onClick={() => setCurrentView('analytics')}
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      clearWorkflowState();
+                      setCurrentView('analytics');
+                    });
+                  }}
                   className="gap-2"
                 >
                   <BarChart3 className="w-4 h-4" />
@@ -746,7 +849,12 @@ export default function App() {
                 <Button
                   variant={currentView === 'team' ? 'default' : 'ghost'}
                   size="sm"
-                  onClick={() => setCurrentView('team')}
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      clearWorkflowState();
+                      setCurrentView('team');
+                    });
+                  }}
                   className="gap-2"
                 >
                   <Users className="w-4 h-4" />
@@ -756,7 +864,12 @@ export default function App() {
                   <Button
                     variant={currentView === 'strava-enhance' ? 'default' : 'ghost'}
                     size="sm"
-                    onClick={() => setCurrentView('strava-enhance')}
+                    onClick={() => {
+                      checkUnsavedChanges(() => {
+                        clearWorkflowState();
+                        setCurrentView('strava-enhance');
+                      });
+                    }}
                     className="gap-2 text-orange-600 hover:text-orange-600"
                   >
                     <Activity className="w-4 h-4" />
@@ -770,7 +883,12 @@ export default function App() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setCurrentView('settings')}
+                onClick={() => {
+                  checkUnsavedChanges(() => {
+                    clearWorkflowState();
+                    setCurrentView('settings');
+                  });
+                }}
                 className="gap-2"
               >
                 <Settings className="w-4 h-4" />
@@ -789,46 +907,50 @@ export default function App() {
         <div className="border-b bg-card">
           <div className="container mx-auto px-4 py-6">
             <div className="mb-6">
-              <h1 className="text-2xl">Create Workout</h1>
+              <h1 className="text-2xl">{isEditingFromHistory ? 'Edit Workout' : 'Create Workout'}</h1>
               <p className="text-sm text-muted-foreground">
-                Ingest → Structure → Validate → Export
+                {isEditingFromHistory 
+                  ? 'Edit your workout directly or re-validate if needed'
+                  : 'Ingest → Structure → Validate → Export'}
               </p>
             </div>
 
-            {/* Progress Steps */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2">
-              {steps.map((step, idx) => (
-                <div key={step.id} className="flex items-center gap-2 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                        currentStep === step.id
-                          ? 'bg-primary text-primary-foreground'
-                          : currentStepIndex > idx
-                          ? 'bg-primary/20 text-primary'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      {step.number}
+            {/* Progress Steps - Hide when editing from history */}
+            {!isEditingFromHistory && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                {steps.map((step, idx) => (
+                  <div key={step.id} className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                          currentStep === step.id
+                            ? 'bg-primary text-primary-foreground'
+                            : currentStepIndex > idx
+                            ? 'bg-primary/20 text-primary'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {step.number}
+                      </div>
+                      <div
+                        className={`text-sm ${
+                          currentStep === step.id
+                            ? ''
+                            : currentStepIndex > idx
+                            ? 'text-primary'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        {step.label}
+                      </div>
                     </div>
-                    <div
-                      className={`text-sm ${
-                        currentStep === step.id
-                          ? ''
-                          : currentStepIndex > idx
-                          ? 'text-primary'
-                          : 'text-muted-foreground'
-                      }`}
-                    >
-                      {step.label}
-                    </div>
+                    {idx < steps.length - 1 && (
+                      <ChevronRight className="w-4 h-4 text-muted-foreground mx-2" />
+                    )}
                   </div>
-                  {idx < steps.length - 1 && (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground mx-2" />
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -845,10 +967,38 @@ export default function App() {
           />
         )}
 
-        {currentView === 'workflow' && currentStepIndex > 0 && (
+        {currentView === 'workflow' && currentStepIndex > 0 && !isEditingFromHistory && (
           <Button variant="ghost" onClick={goBack} className="mb-6">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
+          </Button>
+        )}
+        {currentView === 'workflow' && isEditingFromHistory && (
+          <Button 
+            variant="ghost" 
+            onClick={() => {
+              // Check if workout has been modified
+              if (workout) {
+                setConfirmDialog({
+                  open: true,
+                  title: 'Unsaved Changes',
+                  description: 'Are you sure you want to go back? Any unsaved changes will be lost.',
+                  onConfirm: () => {
+                    setCurrentView('history');
+                    setIsEditingFromHistory(false);
+                    setEditingWorkoutId(null);
+                  },
+                });
+                return;
+              }
+              setCurrentView('history');
+              setIsEditingFromHistory(false);
+              setEditingWorkoutId(null);
+            }} 
+            className="mb-6"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to History
           </Button>
         )}
 
@@ -866,6 +1016,35 @@ export default function App() {
             onWorkoutChange={setWorkout}
             onAutoMap={handleAutoMap}
             onValidate={handleValidate}
+            onSave={isEditingFromHistory ? async () => {
+              if (!user?.id || !workout) return;
+              setLoading(true);
+              try {
+                const { saveWorkoutToHistory } = await import('./lib/workout-history');
+                await saveWorkoutToHistory(
+                  user.id,
+                  workout,
+                  selectedDevice,
+                  exports || undefined,
+                  sources.map(s => `${s.type}:${s.content}`),
+                  validation || undefined
+                );
+                toast.success('Workout saved!');
+                // Refresh history
+                const { getWorkoutHistory } = await import('./lib/workout-history');
+                const history = await getWorkoutHistory(user.id);
+                setWorkoutHistoryList(history);
+                // Optionally go back to history view
+                setCurrentView('history');
+                setIsEditingFromHistory(false);
+                setEditingWorkoutId(null);
+              } catch (error: any) {
+                toast.error(`Failed to save workout: ${error.message}`);
+              } finally {
+                setLoading(false);
+              }
+            } : undefined}
+            isEditingFromHistory={isEditingFromHistory}
             loading={loading}
             selectedDevice={selectedDevice}
             onDeviceChange={setSelectedDevice}
@@ -907,6 +1086,27 @@ export default function App() {
             history={workoutHistoryList}
             onLoadWorkout={handleLoadFromHistory}
             onEditWorkout={handleEditFromHistory}
+            onUpdateWorkout={async (item) => {
+              if (!user?.id) return;
+              try {
+                const { saveWorkoutToAPI } = await import('./lib/workout-api');
+                await saveWorkoutToAPI({
+                  profile_id: user.id,
+                  workout_data: item.workout,
+                  sources: item.sources,
+                  device: item.device,
+                  exports: item.exports,
+                  validation: item.validation,
+                  title: item.workout.title || `Workout ${new Date().toLocaleDateString()}`,
+                });
+                toast.success('Workout updated');
+                // Refresh history
+                const history = await getWorkoutHistory(user.id);
+                setWorkoutHistoryList(history);
+              } catch (error: any) {
+                toast.error(`Failed to update workout: ${error.message}`);
+              }
+            }}
             onDeleteWorkout={async (id) => {
               try {
                 const { deleteWorkoutFromHistory } = await import('./lib/workout-history');
@@ -932,9 +1132,18 @@ export default function App() {
             }}
             onEnhanceStrava={(item) => {
               // Navigate to Strava enhance view
-              setCurrentView('strava-enhance');
+              checkUnsavedChanges(() => {
+                clearWorkflowState();
+                setCurrentView('strava-enhance');
+              });
             }}
           />
+        )}
+
+        {currentView === 'follow-along' && (
+          <div className="container mx-auto px-4 py-8">
+            <FollowAlongWorkouts />
+          </div>
         )}
 
         {currentView === 'analytics' && (
@@ -1046,6 +1255,17 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        onConfirm={confirmDialog.onConfirm}
+        confirmText="Continue"
+        cancelText="Cancel"
+      />
     </div>
   );
 }

@@ -167,6 +167,39 @@ export async function updateWorkoutExportStatus(
 }
 
 /**
+ * Update a workout
+ */
+export async function updateWorkoutInAPI(
+  workoutId: string,
+  request: SaveWorkoutRequest
+): Promise<SavedWorkout> {
+  // For now, we'll delete and recreate since mapper-api doesn't have an update endpoint
+  // In the future, we can add a PUT endpoint to mapper-api
+  const response = await workoutApiCall<{ success: boolean; workout_id: string; message: string }>(
+    `/workouts/save`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        ...request,
+        // Include the workout ID in the request if the API supports updating
+      }),
+    }
+  );
+
+  if (!response.success) {
+    throw new Error(response.message || 'Failed to update workout');
+  }
+
+  // Fetch the updated workout
+  const workout = await getWorkoutFromAPI(response.workout_id, request.profile_id);
+  if (!workout) {
+    throw new Error('Workout updated but could not retrieve it');
+  }
+
+  return workout;
+}
+
+/**
  * Delete a workout
  */
 export async function deleteWorkoutFromAPI(workoutId: string, profileId: string): Promise<boolean> {
