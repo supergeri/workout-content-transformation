@@ -22,7 +22,7 @@ import { User, Mail, CreditCard, Bell, Shield, Smartphone, Watch, Bike, ArrowLef
 import { DeviceId } from '../lib/devices';
 import { toast } from 'sonner';
 import { LinkedAccounts } from './LinkedAccounts';
-import { useClerkUser, useClerkAuth } from '../lib/clerk-auth';
+import { useClerkUser, useClerkAuth, updateUserProfileFromClerk } from '../lib/clerk-auth';
 import { cn } from './ui/utils';
 import { getPreferences, savePreferences, ImageProcessingMethod, getImageProcessingMethod, setImageProcessingMethod } from '../lib/preferences';
 import { Alert, AlertDescription } from './ui/alert';
@@ -39,11 +39,12 @@ type Props = {
   onBack: () => void;
   onAccountsChange?: () => void;
   onAccountDeleted?: () => void;
+  onUserUpdate?: (updates: { selectedDevices?: DeviceId[] }) => void;
 };
 
 type SettingsSection = 'general' | 'account' | 'devices' | 'notifications' | 'security' | 'connected-apps';
 
-export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted }: Props) {
+export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted, onUserUpdate }: Props) {
   const { user: clerkUser } = useClerkUser();
   const { signOut } = useClerkAuth();
   const [name, setName] = useState(user.name);
@@ -77,10 +78,37 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted 
     }
   }, [clerkUser]);
 
-  const handleSave = () => {
-    // Save image processing preference
-    setImageProcessingMethod(imageProcessingMethod);
-    toast.success('Settings saved successfully');
+  const handleSave = async () => {
+    try {
+      // Save image processing preference
+      setImageProcessingMethod(imageProcessingMethod);
+      
+      // Save selected devices if they changed
+      if (clerkUser?.id) {
+        const devicesChanged = JSON.stringify(selectedDevices.sort()) !== JSON.stringify([...user.selectedDevices].sort());
+        
+        if (devicesChanged) {
+          const { error } = await updateUserProfileFromClerk(clerkUser.id, {
+            selectedDevices: selectedDevices,
+          });
+          
+          if (error) {
+            throw error;
+          }
+          
+          // Update parent component with new devices
+          onUserUpdate?.({ selectedDevices });
+          toast.success('Settings and devices saved successfully');
+        } else {
+          toast.success('Settings saved successfully');
+        }
+      } else {
+        toast.success('Settings saved successfully');
+      }
+    } catch (error: any) {
+      console.error('Error saving settings:', error);
+      toast.error(error?.message || 'Failed to save settings. Please try again.');
+    }
   };
 
   const handleImageProcessingMethodChange = (method: ImageProcessingMethod) => {

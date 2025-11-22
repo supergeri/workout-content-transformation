@@ -80,3 +80,4 @@ COMMENT ON COLUMN workouts.is_exported IS 'Whether the workout has been exported
 COMMENT ON COLUMN workouts.exported_at IS 'Timestamp when the workout was exported';
 COMMENT ON COLUMN workouts.exported_to_device IS 'Device ID that the workout was exported to';
 
+

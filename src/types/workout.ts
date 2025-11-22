@@ -10,6 +10,7 @@ export interface Exercise {
   distance_m: number | null;
   distance_range: string | null;
   type: 'strength' | 'cardio' | 'HIIT' | 'interval' | string;
+  followAlongUrl?: string | null; // Instagram, TikTok, YouTube, or any video URL for this exercise
 }
 
 export interface Superset {

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
-import { Clock, Dumbbell, Watch, Bike, Download, Activity, CheckCircle2, ExternalLink, Eye, Trash2, ChevronRight, Edit, List, Search, BarChart3, FileText, Layers, Play, X } from 'lucide-react';
+import { Clock, Dumbbell, Watch, Bike, Download, Activity, CheckCircle2, ExternalLink, Eye, Trash2, ChevronRight, Edit, List, Search, BarChart3, FileText, Layers, Play, X, Video, Link2 } from 'lucide-react';
 import { WorkoutHistoryItem } from '../lib/workout-history';
 import { isAccountConnectedSync } from '../lib/linked-accounts';
 import { DeviceId, getDeviceById } from '../lib/devices';
@@ -28,11 +28,13 @@ import {
 import { Checkbox } from './ui/checkbox';
 import { Input } from './ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { FollowAlongUrlEditor } from './FollowAlongUrlEditor';
 
 type Props = {
   history: WorkoutHistoryItem[];
   onLoadWorkout: (item: WorkoutHistoryItem) => void;
   onEditWorkout?: (item: WorkoutHistoryItem) => void;
+  onUpdateWorkout?: (item: WorkoutHistoryItem) => Promise<void>;
   onDeleteWorkout: (id: string) => void;
   onEnhanceStrava?: (item: WorkoutHistoryItem) => void;
 };
@@ -46,7 +48,7 @@ type ViewCard = {
   category: string;
 };
 
-export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onDeleteWorkout, onEnhanceStrava }: Props) {
+export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdateWorkout, onDeleteWorkout, onEnhanceStrava }: Props) {
   const stravaConnected = isAccountConnectedSync('strava');
   const [viewingWorkout, setViewingWorkout] = useState<WorkoutHistoryItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -838,14 +840,42 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onDelete
                                                       <Dumbbell className="w-2.5 h-2.5 text-primary" />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                      <div className="font-medium text-xs leading-tight mb-0.5">
-                                                        {mappedName}
-                                                      </div>
-                                                      {isMapped && (
-                                                        <div className="text-[9px] text-muted-foreground/70 italic mb-0.5">
-                                                          was: {originalName}
+                                                      <div className="flex items-start justify-between gap-2 mb-0.5">
+                                                        <div className="flex-1 min-w-0">
+                                                          <div className="font-medium text-xs leading-tight">
+                                                            {mappedName}
+                                                          </div>
+                                                          {isMapped && (
+                                                            <div className="text-[9px] text-muted-foreground/70 italic">
+                                                              was: {originalName}
+                                                            </div>
+                                                          )}
                                                         </div>
-                                                      )}
+                                                        {onEditWorkout && (
+                                                          <FollowAlongUrlEditor
+                                                            url={exercise.followAlongUrl}
+                                                            onSave={async (url) => {
+                                                              // Update exercise in workout structure
+                                                              const updatedWorkout = { ...viewingWorkout.workout };
+                                                              if (updatedWorkout.blocks?.[blockIdx]?.supersets?.[ssIdx]?.exercises?.[exIdx]) {
+                                                                updatedWorkout.blocks[blockIdx].supersets[ssIdx].exercises[exIdx].followAlongUrl = url;
+                                                                const updatedItem = {
+                                                                  ...viewingWorkout,
+                                                                  workout: updatedWorkout,
+                                                                };
+                                                                // Save updated workout if update handler provided
+                                                                if (onUpdateWorkout) {
+                                                                  await onUpdateWorkout(updatedItem);
+                                                                } else if (onEditWorkout) {
+                                                                  onEditWorkout(updatedItem);
+                                                                }
+                                                              }
+                                                            }}
+                                                            exerciseName={mappedName}
+                                                            compact
+                                                          />
+                                                        )}
+                                                      </div>
                                                       <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground">
                                                         {exercise.sets && <span>({exercise.sets} sets)</span>}
                                                         {exercise.reps && <span>{exercise.reps} reps</span>}
@@ -882,14 +912,42 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onDelete
                                             <Dumbbell className="w-2.5 h-2.5 text-primary" />
                                           </div>
                                           <div className="flex-1 min-w-0">
-                                            <div className="font-medium text-xs leading-tight mb-0.5">
-                                              {mappedName}
-                                            </div>
-                                            {isMapped && (
-                                              <div className="text-[9px] text-muted-foreground/70 italic mb-0.5">
-                                                was: {originalName}
+                                            <div className="flex items-start justify-between gap-2 mb-0.5">
+                                              <div className="flex-1 min-w-0">
+                                                <div className="font-medium text-xs leading-tight">
+                                                  {mappedName}
+                                                </div>
+                                                {isMapped && (
+                                                  <div className="text-[9px] text-muted-foreground/70 italic">
+                                                    was: {originalName}
+                                                  </div>
+                                                )}
                                               </div>
-                                            )}
+                                              {onEditWorkout && (
+                                                <FollowAlongUrlEditor
+                                                  url={exercise.followAlongUrl}
+                                                  onSave={async (url) => {
+                                                    // Update exercise in workout structure
+                                                    const updatedWorkout = { ...viewingWorkout.workout };
+                                                    if (updatedWorkout.blocks?.[blockIdx]?.exercises?.[exIdx]) {
+                                                      updatedWorkout.blocks[blockIdx].exercises[exIdx].followAlongUrl = url;
+                                                      const updatedItem = {
+                                                        ...viewingWorkout,
+                                                        workout: updatedWorkout,
+                                                      };
+                                                      // Save updated workout if update handler provided
+                                                      if (onUpdateWorkout) {
+                                                        await onUpdateWorkout(updatedItem);
+                                                      } else if (onEditWorkout) {
+                                                        onEditWorkout(updatedItem);
+                                                      }
+                                                    }
+                                                  }}
+                                                  exerciseName={mappedName}
+                                                  compact
+                                                />
+                                              )}
+                                            </div>
                                             <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground">
                                               {exercise.sets && <span>({exercise.sets} sets)</span>}
                                               {exercise.reps && <span>{exercise.reps} reps</span>}
