@@ -1,4 +1,4 @@
-import { WorkoutStructure, SourceType, Block, Superset } from '../types/workout';
+import { WorkoutStructure, SourceType, Block, Superset, Exercise } from '../types/workout';
 
 // API base URL - defaults to localhost:8004 (workout-ingestor-api)
 const API_BASE_URL = import.meta.env.VITE_INGESTOR_API_URL || 'http://localhost:8004';
@@ -7,10 +7,11 @@ const API_BASE_URL = import.meta.env.VITE_INGESTOR_API_URL || 'http://localhost:
 const API_TIMEOUT = 120000;
 
 /**
- * Normalize workout structure to ensure all blocks have supersets
- * If a block has exercises directly but no supersets, convert them to a superset
+ * Normalize workout structure to ensure all blocks have exercises array (new format)
+ * Converts old format (supersets) to new format (exercises with structure)
+ * This function is exported for use when loading workouts from history
  */
-function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStructure {
+export function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStructure {
   // Ensure workout has blocks
   if (!workout.blocks || workout.blocks.length === 0) {
     return {

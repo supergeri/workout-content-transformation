@@ -17,7 +17,7 @@ import { ProfileCompletion } from './components/ProfileCompletion';
 import { WelcomeGuide } from './components/WelcomeGuide';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { WorkoutStructure, ExportFormats, ValidationResponse } from './types/workout';
-import { generateWorkoutStructure as generateWorkoutStructureReal, checkApiHealth } from './lib/api';
+import { generateWorkoutStructure as generateWorkoutStructureReal, checkApiHealth, normalizeWorkoutStructure } from './lib/api';
 import { generateWorkoutStructure as generateWorkoutStructureMock } from './lib/mock-api';
 import { 
   validateWorkoutMapping, 
@@ -791,7 +791,11 @@ export default function App() {
   };
 
   const handleEditFromHistory = (historyItem: any) => {
-    setWorkout(historyItem.workout);
+    // Normalize workout structure to convert old format (supersets) to new format (exercises)
+    // This ensures workouts loaded from history are in the correct format for StructureWorkout
+    const normalizedWorkout = normalizeWorkoutStructure(historyItem.workout);
+    
+    setWorkout(normalizedWorkout);
     setSources(historyItem.sources.map((s: string) => {
       const [type, ...content] = s.split(':');
       return { id: Math.random().toString(), type, content: content.join(':') };
