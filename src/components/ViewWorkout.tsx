@@ -105,19 +105,30 @@ export function ViewWorkout({ workout, onClose }: Props) {
 
   // Handle escape key to close
   useEffect(() => {
+    console.log('Escape key handler registered');
     const handleEscape = (e: KeyboardEvent) => {
+      console.log('Key pressed:', e.key);
       if (e.key === 'Escape') {
+        console.log('Escape pressed, closing...');
         onClose();
       }
     };
     document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
+    return () => {
+      console.log('Escape key handler removed');
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [onClose]);
 
   return (
     <div
       className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          console.log('Backdrop clicked!');
+          onClose();
+        }
+      }}
     >
       <Card
         className="w-full max-w-4xl h-[85vh] flex flex-col"
@@ -157,8 +168,12 @@ export function ViewWorkout({ workout, onClose }: Props) {
             <Button
               variant="ghost"
               size="icon"
-              onClick={onClose}
-              className="h-9 w-9 shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                console.log('Close button clicked!');
+                onClose();
+              }}
+              className="h-9 w-9 shrink-0 relative z-10"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
