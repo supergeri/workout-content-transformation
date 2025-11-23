@@ -721,7 +721,7 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
 
       {/* View Workout Dialog - Shows selected cards */}
       <Dialog open={!!viewingWorkout && !showCardSelector} onOpenChange={(open) => !open && setViewingWorkout(null)}>
-        <DialogContent className="max-w-[95vw] w-[95vw] max-h-[90vh] overflow-hidden flex flex-col p-0 [&>button]:hidden">
+        <DialogContent className="!max-w-[85vw] !w-[85vw] !left-[50%] !top-[50%] !translate-x-[-50%] !translate-y-[-50%] max-h-[90vh] overflow-hidden flex flex-col p-0 [&>button]:hidden">
           <div className="px-6 pt-4 pb-3 border-b flex items-center justify-between flex-shrink-0">
             <DialogHeader className="flex-1">
               <DialogTitle className="text-xl">{viewingWorkout?.workout?.title || 'Untitled Workout'}</DialogTitle>
