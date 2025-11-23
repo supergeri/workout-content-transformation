@@ -1,17 +1,20 @@
-import { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { ScrollArea } from './ui/scroll-area';
-import { Watch, Bike, Wand2, ShieldCheck, Edit2, Check, X, Trash2, GripVertical, Plus, Video, ExternalLink, Save } from 'lucide-react';
-import { FollowAlongInstructions } from './FollowAlongInstructions';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { WorkoutStructure, Exercise } from '../types/workout';
+import { Watch, Bike, Wand2, ShieldCheck, Save, Code } from 'lucide-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragOverlay } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { WorkoutStructure, Block, Exercise } from '../types/workout';
 import { DeviceId, getDevicesByIds, getDeviceById } from '../lib/devices';
-import { ExerciseSearch } from './ExerciseSearch';
+import { BlocksLibrary } from './BlocksLibrary';
+import { WorkoutBuilder } from './WorkoutBuilder';
+import { BlockDetailEditor } from './BlockDetailEditor';
+import { addIdsToWorkout, cloneBlock, generateId } from '../lib/workout-utils';
+import { getInitializedSampleWorkout } from '../lib/sample-workout';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { ScrollArea } from './ui/scroll-area';
+import { Label } from './ui/label';
+import { CreateBlockDialog } from './CreateBlockDialog';
 
 type Props = {
   workout: WorkoutStructure;
@@ -24,89 +27,8 @@ type Props = {
   selectedDevice: DeviceId;
   onDeviceChange: (device: DeviceId) => void;
   userSelectedDevices: DeviceId[];
+  onNavigateToSettings?: () => void;
 };
-
-type SortableExerciseProps = {
-  exercise: Exercise;
-  exerciseId: string;
-  onEdit: () => void;
-  onDelete: () => void;
-};
-
-function SortableExercise({ exercise, exerciseId, onEdit, onDelete }: SortableExerciseProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: exerciseId });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const getDisplayText = () => {
-    const parts: string[] = [];
-    if (exercise.sets) parts.push(`${exercise.sets} sets`);
-    if (exercise.reps) parts.push(`${exercise.reps} reps`);
-    if (exercise.reps_range) parts.push(`${exercise.reps_range} reps`);
-    if (exercise.duration_sec) parts.push(`${exercise.duration_sec}s`);
-    if (exercise.distance_m) parts.push(`${exercise.distance_m}m`);
-    if (exercise.distance_range) parts.push(`${exercise.distance_range}`);
-    if (exercise.rest_sec) parts.push(`Rest: ${exercise.rest_sec}s`);
-    return parts.length > 0 ? parts.join(' • ') : 'No details';
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 p-3 border rounded-lg bg-muted/50 hover:bg-muted"
-    >
-      <button
-        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="w-4 h-4" />
-      </button>
-      
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <p className="font-medium">{exercise.name}</p>
-          {exercise.followAlongUrl && (
-            <a
-              href={exercise.followAlongUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-primary hover:text-primary/80"
-              title="View follow-along video"
-            >
-              <Video className="w-4 h-4" />
-            </a>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {getDisplayText()}
-        </p>
-      </div>
-      
-      <div className="flex gap-1">
-        <Button size="sm" variant="ghost" onClick={onEdit}>
-          <Edit2 className="w-4 h-4" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDelete}>
-          <Trash2 className="w-4 h-4 text-destructive" />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 export function StructureWorkout({
   workout,
@@ -118,13 +40,41 @@ export function StructureWorkout({
   loading,
   selectedDevice,
   onDeviceChange,
-  userSelectedDevices
+  userSelectedDevices,
+  onNavigateToSettings
 }: Props) {
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [tempTitle, setTempTitle] = useState(workout.title);
-  const [editingExercise, setEditingExercise] = useState<{ blockIdx: number; supersetIdx: number; exerciseIdx: number } | null>(null);
-  const [showExerciseSearch, setShowExerciseSearch] = useState(false);
-  const [addingToBlock, setAddingToBlock] = useState<{ blockIdx: number; supersetIdx: number } | null>(null);
+  // Ensure workout has IDs - use a stable check to avoid infinite loops
+  const workoutWithIds = useMemo(() => {
+    const hasAllIds = workout.blocks.every(b => 
+      b.id && b.exercises.every(ex => ex.id)
+    );
+    if (hasAllIds) {
+      return workout;
+    }
+    return addIdsToWorkout(workout);
+  }, [
+    // Use stable dependencies - only re-compute if structure actually changes
+    workout.blocks.length,
+    workout.title,
+    workout.source,
+    // Stringify block IDs to detect actual changes
+    workout.blocks.map(b => b.id).join(','),
+    workout.blocks.map(b => b.exercises.map(e => e.id).join(',')).join('|')
+  ]);
+
+  // Blocks Library (left panel) - separate from workout blocks
+  const [blocksLibrary, setBlocksLibrary] = useState<Block[]>([]);
+
+  // Selected block for editing
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const selectedBlock = workoutWithIds.blocks.find(b => b.id === selectedBlockId) || null;
+
+  // Create block dialog
+  const [showCreateBlockDialog, setShowCreateBlockDialog] = useState(false);
+  const [editingLibraryBlock, setEditingLibraryBlock] = useState<Block | null>(null);
+
+  // Debug JSON dialog
+  const [showDebugJson, setShowDebugJson] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -135,94 +85,168 @@ export function StructureWorkout({
 
   const availableDevices = getDevicesByIds(userSelectedDevices);
 
-  const saveTitle = () => {
-    onWorkoutChange({ ...workout, title: tempTitle });
-    setEditingTitle(false);
+  // Initialize blocks library only once on mount if workout is empty
+  useEffect(() => {
+    if (blocksLibrary.length === 0 && workout.blocks.length === 0) {
+      const sample = getInitializedSampleWorkout();
+      setBlocksLibrary(sample.blocks);
+    }
+  }, []); // Only run on mount
+
+  // Handle drag end - supports dragging from library to workout and reordering within workout
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Dragging from library to workout
+    if (activeId.startsWith('library-')) {
+      const blockId = activeId.replace('library-', '');
+      const sourceBlock = blocksLibrary.find(b => b.id === blockId);
+      if (!sourceBlock) return;
+
+      // Clone the block with new IDs
+      const clonedBlock = cloneBlock(sourceBlock);
+      
+      // Find drop position in workout
+      let overIndex = -1;
+      if (overId.startsWith('workout-')) {
+        overIndex = workoutWithIds.blocks.findIndex(b => b.id === overId.replace('workout-', ''));
+      } else if (overId === 'workout-builder') {
+        // Dropped on the builder container itself
+        overIndex = workoutWithIds.blocks.length;
+      }
+      
+      const newBlocks = [...workoutWithIds.blocks];
+      if (overIndex >= 0) {
+        newBlocks.splice(overIndex, 0, clonedBlock);
+      } else {
+        newBlocks.push(clonedBlock);
+      }
+
+      onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
+      return;
+    }
+
+    // Reordering blocks within workout
+    if (activeId.startsWith('workout-') && overId.startsWith('workout-')) {
+      const activeIndex = workoutWithIds.blocks.findIndex(b => b.id === activeId.replace('workout-', ''));
+      const overIndex = workoutWithIds.blocks.findIndex(b => b.id === overId.replace('workout-', ''));
+      
+      if (activeIndex >= 0 && overIndex >= 0) {
+        const newBlocks = arrayMove(workoutWithIds.blocks, activeIndex, overIndex);
+        onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
+      }
+      return;
+    }
+
+    // Reordering exercises within a block (handled by BlockDetailEditor's DndContext)
+    // This will be handled separately in BlockDetailEditor
   };
 
-  const handleDragEnd = (event: DragEndEvent, blockIdx: number, supersetIdx: number) => {
-    const { active, over } = event;
+  // Block library operations
+  const handleLibraryBlockEdit = (block: Block) => {
+    setEditingLibraryBlock(block);
+    setShowCreateBlockDialog(true);
+  };
 
-    if (over && active.id !== over.id) {
-      const newWorkout = JSON.parse(JSON.stringify(workout));
-      const exercises = newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises;
-      
-      const oldIndex = exercises.findIndex((e: Exercise, idx: number) => `${blockIdx}-${supersetIdx}-${idx}` === active.id);
-      const newIndex = exercises.findIndex((e: Exercise, idx: number) => `${blockIdx}-${supersetIdx}-${idx}` === over.id);
-      
-      newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises = arrayMove(exercises, oldIndex, newIndex);
-      onWorkoutChange(newWorkout);
+  const handleLibraryBlockDelete = (blockId: string) => {
+    setBlocksLibrary(blocksLibrary.filter(b => b.id !== blockId));
+  };
+
+  const handleLibraryBlockCreate = (block: Block) => {
+    const newBlock = { ...block, id: generateId(), exercises: block.exercises.map(ex => ({ ...ex, id: generateId() })) };
+    if (editingLibraryBlock) {
+      setBlocksLibrary(blocksLibrary.map(b => b.id === editingLibraryBlock.id ? newBlock : b));
+    } else {
+      setBlocksLibrary([...blocksLibrary, newBlock]);
+    }
+    setShowCreateBlockDialog(false);
+    setEditingLibraryBlock(null);
+  };
+
+  // Workout block operations
+  const handleBlockUpdate = (updatedBlock: Block) => {
+    const newBlocks = workoutWithIds.blocks.map(b => 
+      b.id === updatedBlock.id ? updatedBlock : b
+    );
+    onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
+  };
+
+  const handleBlockDelete = (blockId: string) => {
+    const newBlocks = workoutWithIds.blocks.filter(b => b.id !== blockId);
+    onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
+    if (selectedBlockId === blockId) {
+      setSelectedBlockId(null);
     }
   };
 
-  const deleteExercise = (blockIdx: number, supersetIdx: number, exerciseIdx: number) => {
-    const newWorkout = JSON.parse(JSON.stringify(workout));
-    newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises.splice(exerciseIdx, 1);
-    onWorkoutChange(newWorkout);
+  // Exercise operations
+  const handleExerciseAdd = (blockId: string, exercise: Exercise) => {
+    const newBlocks = workoutWithIds.blocks.map(block => {
+      if (block.id === blockId) {
+        return { ...block, exercises: [...block.exercises, exercise] };
+      }
+      return block;
+    });
+    onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
   };
 
-
-  const updateExercise = (blockIdx: number, supersetIdx: number, exerciseIdx: number, updates: Partial<Exercise>) => {
-    const newWorkout = JSON.parse(JSON.stringify(workout));
-    const exercise = newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises[exerciseIdx];
-    newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises[exerciseIdx] = {
-      ...exercise,
-      ...updates
-    };
-    onWorkoutChange(newWorkout);
-    setEditingExercise(null);
+  const handleExerciseUpdate = (blockId: string, exerciseId: string, updatedExercise: Exercise) => {
+    const newBlocks = workoutWithIds.blocks.map(block => {
+      if (block.id === blockId) {
+        return {
+          ...block,
+          exercises: block.exercises.map(ex => ex.id === exerciseId ? updatedExercise : ex)
+        };
+      }
+      return block;
+    });
+    onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
   };
 
-  const addExercise = (blockIdx: number, supersetIdx: number, exerciseName: string) => {
-    const newWorkout = JSON.parse(JSON.stringify(workout));
-    const newExercise: Exercise = {
-      name: exerciseName,
-      sets: 3,
-      reps: 10,
-      reps_range: null,
-      duration_sec: null,
-      rest_sec: 60,
-      distance_m: null,
-      distance_range: null,
-      type: 'strength'
-    };
-    newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises.push(newExercise);
-    onWorkoutChange(newWorkout);
-    setShowExerciseSearch(false);
-    setAddingToBlock(null);
+  const handleExerciseDelete = (blockId: string, exerciseId: string) => {
+    const newBlocks = workoutWithIds.blocks.map(block => {
+      if (block.id === blockId) {
+        return {
+          ...block,
+          exercises: block.exercises.filter(ex => ex.id !== exerciseId)
+        };
+      }
+      return block;
+    });
+    onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
   };
+
+  const handleExerciseReorder = (blockId: string, exerciseIds: string[]) => {
+    const block = workoutWithIds.blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    const reorderedExercises = exerciseIds
+      .map(id => block.exercises.find(ex => ex.id === id))
+      .filter((ex): ex is Exercise => ex !== undefined);
+
+    const newBlocks = workoutWithIds.blocks.map(b => 
+      b.id === blockId ? { ...b, exercises: reorderedExercises } : b
+    );
+    onWorkoutChange({ ...workoutWithIds, blocks: newBlocks });
+  };
+
+  // Get block IDs for drag-and-drop
+  const workoutBlockIds = workoutWithIds.blocks.map(b => `workout-${b.id}`).filter(Boolean);
+  const libraryBlockIds = blocksLibrary.map(b => `library-${b.id}`).filter(Boolean);
+
+  // Get workout block IDs (without prefix) for WorkoutBuilder
+  const workoutBlockIdsSimple = workoutWithIds.blocks.map(b => b.id || '').filter(Boolean);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Header Card with Device Selection and Actions */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              {editingTitle ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={tempTitle}
-                    onChange={(e) => setTempTitle(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
-                    className="max-w-md"
-                  />
-                  <Button size="sm" onClick={saveTitle}>
-                    <Check className="w-4 h-4" />
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingTitle(false)}>
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <CardTitle>{workout.title}</CardTitle>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingTitle(true)}>
-                    <Edit2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
+          <CardTitle>Workout Builder</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -274,150 +298,108 @@ export function StructureWorkout({
                 </Button>
               </>
             )}
+            {process.env.NODE_ENV === 'development' && (
+              <Button onClick={() => setShowDebugJson(true)} variant="outline" className="gap-2">
+                <Code className="w-4 h-4" />
+                Debug JSON
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      <ScrollArea className="h-[600px]">
-        <div className="space-y-4 pr-4">
-          {workout.blocks.map((block, blockIdx) => (
-            <Card key={blockIdx}>
-              <CardHeader>
-                <CardTitle className="text-lg">{block.label}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {block.supersets.map((superset, supersetIdx) => {
-                  const exerciseIds = superset.exercises.map((_, idx) => `${blockIdx}-${supersetIdx}-${idx}`);
-                  
-                  return (
-                    <div key={supersetIdx} className="space-y-2">
-                      <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragEnd={(event) => handleDragEnd(event, blockIdx, supersetIdx)}
-                      >
-                        <SortableContext items={exerciseIds} strategy={verticalListSortingStrategy}>
-                          {superset.exercises.map((exercise, exerciseIdx) => {
-                            const exerciseId = `${blockIdx}-${supersetIdx}-${exerciseIdx}`;
-                            
-                            if (editingExercise?.blockIdx === blockIdx &&
-                                editingExercise?.supersetIdx === supersetIdx &&
-                                editingExercise?.exerciseIdx === exerciseIdx) {
-                              return (
-                                <Card key={exerciseId} className="p-3">
-                                  <div className="space-y-3">
-                                    <Input
-                                      value={exercise.name}
-                                      onChange={(e) => updateExercise(blockIdx, supersetIdx, exerciseIdx, { name: e.target.value })}
-                                      placeholder="Exercise name"
-                                    />
-                                    <div className="flex gap-2">
-                                      <Input
-                                        value={exercise.sets || ''}
-                                        onChange={(e) => updateExercise(blockIdx, supersetIdx, exerciseIdx, { sets: parseInt(e.target.value) || null })}
-                                        placeholder="Sets"
-                                        type="number"
-                                        className="w-20"
-                                      />
-                                      <Input
-                                        value={exercise.reps || ''}
-                                        onChange={(e) => updateExercise(blockIdx, supersetIdx, exerciseIdx, { reps: e.target.value ? parseInt(e.target.value) : null })}
-                                        placeholder="Reps"
-                                        type="number"
-                                        className="flex-1"
-                                      />
-                                      <Input
-                                        value={exercise.rest_sec || ''}
-                                        onChange={(e) => updateExercise(blockIdx, supersetIdx, exerciseIdx, { rest_sec: e.target.value ? parseInt(e.target.value) : null })}
-                                        placeholder="Rest (sec)"
-                                        type="number"
-                                        className="w-24"
-                                      />
-                                    </div>
-                                    <div className="space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <Label className="text-sm flex items-center gap-2">
-                                          <Video className="w-4 h-4" />
-                                          Follow-Along Video URL
-                                        </Label>
-                                        <FollowAlongInstructions />
-                                      </div>
-                                      <Input
-                                        value={exercise.followAlongUrl || ''}
-                                        onChange={(e) => updateExercise(blockIdx, supersetIdx, exerciseIdx, { followAlongUrl: e.target.value || null })}
-                                        placeholder="Instagram, TikTok, YouTube, or any video URL"
-                                        type="url"
-                                      />
-                                      {exercise.followAlongUrl && (
-                                        <a
-                                          href={exercise.followAlongUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-xs text-primary hover:underline flex items-center gap-1"
-                                        >
-                                          Open link <ExternalLink className="w-3 h-3" />
-                                        </a>
-                                      )}
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <Button size="sm" onClick={() => setEditingExercise(null)}>
-                                        Done
-                                      </Button>
-                                      <Button size="sm" variant="outline" onClick={() => {
-                                        updateExercise(blockIdx, supersetIdx, exerciseIdx, { followAlongUrl: null });
-                                      }}>
-                                        Clear Link
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </Card>
-                              );
-                            }
-                            
-                            return (
-                              <SortableExercise
-                                key={exerciseId}
-                                exercise={exercise}
-                                exerciseId={exerciseId}
-                                onEdit={() => setEditingExercise({ blockIdx, supersetIdx, exerciseIdx })}
-                                onDelete={() => deleteExercise(blockIdx, supersetIdx, exerciseIdx)}
-                              />
-                            );
-                          })}
-                        </SortableContext>
-                      </DndContext>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setAddingToBlock({ blockIdx, supersetIdx });
-                          setShowExerciseSearch(true);
-                        }}
-                        className="w-full gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Exercise
-                      </Button>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </ScrollArea>
+      {/* Two-Column Layout */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="grid grid-cols-[30%_70%] gap-4 h-[calc(100vh-300px)]">
+          {/* Left Column: Blocks Library */}
+          <div className="h-full">
+            <SortableContext items={libraryBlockIds} strategy={verticalListSortingStrategy}>
+              <BlocksLibrary
+                blocks={blocksLibrary}
+                onEdit={handleLibraryBlockEdit}
+                onDelete={handleLibraryBlockDelete}
+                onAddBlock={() => {
+                  setEditingLibraryBlock(null);
+                  setShowCreateBlockDialog(true);
+                }}
+              />
+            </SortableContext>
+          </div>
 
-      {/* Exercise Search Modal */}
-      {showExerciseSearch && addingToBlock && (
-        <ExerciseSearch
-          onSelect={(exerciseName) => addExercise(addingToBlock.blockIdx, addingToBlock.supersetIdx, exerciseName)}
+          {/* Right Column: Workout Structure */}
+          <div className="h-full flex flex-col space-y-4">
+            <div className="flex-1 min-h-0">
+              <WorkoutBuilder
+                workout={workoutWithIds}
+                selectedBlockId={selectedBlockId}
+                onTitleChange={(title) => onWorkoutChange({ ...workoutWithIds, title })}
+                onBlockSelect={setSelectedBlockId}
+                onBlockDelete={handleBlockDelete}
+                blockIds={workoutBlockIdsSimple}
+              />
+            </div>
+
+            {/* Block Detail Editor */}
+            {selectedBlock && (
+              <div className="flex-shrink-0 max-h-[400px] overflow-y-auto">
+                <BlockDetailEditor
+                  block={selectedBlock}
+                  workout={workoutWithIds}
+                  selectedDevice={selectedDevice}
+                  onBlockUpdate={handleBlockUpdate}
+                  onExerciseAdd={handleExerciseAdd}
+                  onExerciseUpdate={handleExerciseUpdate}
+                  onExerciseDelete={handleExerciseDelete}
+                  onExerciseReorder={handleExerciseReorder}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </DndContext>
+
+      {/* Create Block Dialog */}
+      {showCreateBlockDialog && (
+        <CreateBlockDialog
+          block={editingLibraryBlock}
+          onSave={handleLibraryBlockCreate}
           onClose={() => {
-            setShowExerciseSearch(false);
-            setAddingToBlock(null);
+            setShowCreateBlockDialog(false);
+            setEditingLibraryBlock(null);
           }}
-          device={selectedDevice}
         />
+      )}
+
+      {/* Debug JSON Dialog */}
+      {showDebugJson && (
+        <Dialog open={showDebugJson} onOpenChange={setShowDebugJson}>
+          <DialogContent className="max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle>Workout JSON</DialogTitle>
+            </DialogHeader>
+            <ScrollArea className="h-[600px]">
+              <pre className="text-xs bg-muted p-4 rounded overflow-auto">
+                {JSON.stringify(workoutWithIds, null, 2)}
+              </pre>
+            </ScrollArea>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard.writeText(JSON.stringify(workoutWithIds, null, 2));
+                  // You could add a toast here
+                }}
+              >
+                Copy JSON
+              </Button>
+              <Button onClick={() => setShowDebugJson(false)}>Close</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

@@ -1,32 +1,61 @@
 // API Request/Response Types matching the actual backend
 
 export interface Exercise {
+  id?: string; // Unique ID for drag-and-drop stability
   name: string;
   sets: number | null;
   reps: number | null;
   reps_range: string | null;
   duration_sec: number | null;
-  rest_sec: number | null;
+  rest_sec: number | null; // Rest after this exercise (only used in 'regular' structure)
   distance_m: number | null;
   distance_range: string | null;
   type: 'strength' | 'cardio' | 'HIIT' | 'interval' | string;
   followAlongUrl?: string | null; // Instagram, TikTok, YouTube, or any video URL for this exercise
+  notes?: string | null;
 }
 
+export type WorkoutStructureType = 
+  | 'superset'    // 2 exercises back to back, no rest between, rest after pair
+  | 'circuit'     // Multiple exercises back to back, no rest between, rest after circuit
+  | 'tabata'      // Work/rest intervals (typically 20s work, 10s rest)
+  | 'emom'        // Every Minute On the Minute
+  | 'amrap'       // As Many Rounds As Possible
+  | 'for-time'    // Complete as fast as possible
+  | 'rounds'      // Fixed number of rounds
+  | 'sets'        // Fixed number of sets with rest between
+  | 'regular';    // Standard workout with rest between exercises
+
+export interface Block {
+  id?: string; // Unique ID for drag-and-drop stability
+  label: string;
+  structure: WorkoutStructureType | null;
+  
+  // Exercises in order (no duplication - exercises appear only once)
+  exercises: Exercise[];
+  
+  // Structure-specific parameters
+  rounds?: number | null;              // For 'rounds' structure: number of rounds
+  sets?: number | null;                // For 'sets' structure: number of sets
+  time_cap_sec?: number | null;         // For 'amrap' and 'for-time': time limit in seconds
+  time_work_sec?: number | null;        // For 'tabata' and 'emom': work time in seconds
+  time_rest_sec?: number | null;        // For 'tabata': rest time in seconds
+  
+  // Rest periods
+  rest_between_rounds_sec?: number | null;  // Rest between rounds (for 'rounds', 'circuit', 'superset')
+  rest_between_sets_sec?: number | null;    // Rest between sets (for 'sets' structure)
+  
+  // Legacy fields for backward compatibility (deprecated)
+  rest_between_sec?: number | null;          // Alias for rest_between_rounds_sec
+  default_reps_range?: string | null;        // Deprecated
+  default_sets?: number | null;             // Deprecated
+  supersets?: Array<{ exercises: Exercise[]; rest_between_sec: number | null }> | null; // Deprecated
+}
+
+// Legacy Superset interface for backward compatibility
 export interface Superset {
   exercises: Exercise[];
   rest_between_sec: number | null;
-}
-
-export interface Block {
-  label: string;
-  structure: string | null;
-  rest_between_sec: number | null;
-  time_work_sec: number | null;
-  default_reps_range: string | null;
-  default_sets: number | null;
-  exercises: Exercise[];
-  supersets: Superset[];
 }
 
 export interface WorkoutStructure {
