@@ -9,6 +9,12 @@ import { isAccountConnectedSync } from '../lib/linked-accounts';
 import { DeviceId, getDeviceById } from '../lib/devices';
 import { ViewWorkout } from './ViewWorkout';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
