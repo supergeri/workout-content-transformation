@@ -19,10 +19,11 @@ const SERVICES: ServiceConfig[] = [
 ];
 
 export function DevSystemStatus() {
-  // Hide entirely in production
+  // Don't show anything in production
   if (import.meta.env.PROD) return null;
   if (SERVICES.length === 0) return null;
 
+  const [open, setOpen] = useState(false);
   const [services, setServices] = useState<ServiceState[]>(
     SERVICES.map((s) => ({ ...s, loading: true }))
   );
@@ -75,73 +76,120 @@ export function DevSystemStatus() {
   }, []);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        left: 8,
-        bottom: 8,
-        maxWidth: "50vw",
-        padding: 8,
-        borderRadius: 8,
-        background: "rgba(0,0,0,0.8)",
-        color: "#fff",
-        fontSize: 11,
-        fontFamily:
-          'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
-        zIndex: 9999
-      }}
-    >
-      <div style={{ marginBottom: 4, fontWeight: 600 }}>
-        Dev System Status
-      </div>
-      {services.map((svc) => (
+    <>
+      {/* Always-visible toggle pill */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          position: "fixed",
+          left: 8,
+          bottom: 8,
+          padding: "4px 10px",
+          borderRadius: 999,
+          background: "rgba(0,0,0,0.75)",
+          color: "#fff",
+          fontSize: 11,
+          fontFamily:
+            'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+          zIndex: 9999,
+          border: "none",
+          cursor: "pointer"
+        }}
+      >
+        Dev {open ? "▾" : "▴"}
+      </button>
+
+      {/* Drawer */}
+      {open && (
         <div
-          key={svc.name}
           style={{
-            display: "flex",
-            flexDirection: "column",
-            marginBottom: 4,
-            paddingBottom: 4,
-            borderBottom: "1px solid rgba(255,255,255,0.15)"
+            position: "fixed",
+            left: 8,
+            bottom: 36, // sits just above the pill
+            width: 340,
+            maxHeight: "50vh",
+            overflow: "auto",
+            padding: 10,
+            borderRadius: 8,
+            background: "rgba(0,0,0,0.9)",
+            color: "#fff",
+            fontSize: 11,
+            fontFamily:
+              'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+            zIndex: 9999,
+            boxShadow: "0 8px 20px rgba(0,0,0,0.4)"
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{svc.name}</span>
-            <span>
-              {svc.loading
-                ? "Loading…"
-                : svc.error
-                ? "❌"
-                : "✅"}
-            </span>
-          </div>
-          {!svc.loading && svc.error && (
-            <div style={{ color: "#fbb" }}>{svc.error}</div>
-          )}
-          {!svc.loading && !svc.error && svc.data && (
-            <div
+          <div
+            style={{
+              marginBottom: 6,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontWeight: 600
+            }}
+          >
+            <span>Dev System Status</span>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
               style={{
-                marginTop: 2,
-                maxHeight: 80,
-                overflow: "auto",
-                fontFamily: "Menlo, monospace",
-                fontSize: 10
+                border: "none",
+                background: "transparent",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 12
               }}
             >
-              <pre
-                style={{
-                  margin: 0,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word"
-                }}
-              >
-                {JSON.stringify(svc.data, null, 2)}
-              </pre>
+              ✕
+            </button>
+          </div>
+
+          {/* List of services */}
+          {services.map((svc) => (
+            <div
+              key={svc.name}
+              style={{
+                marginBottom: 8,
+                paddingBottom: 8,
+                borderBottom: "1px solid rgba(255,255,255,0.15)"
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{svc.name}</span>
+                <span>
+                  {svc.loading ? "Loading…" : svc.error ? "❌" : "✅"}
+                </span>
+              </div>
+
+              {svc.error && (
+                <div style={{ color: "#f99", marginTop: 2 }}>{svc.error}</div>
+              )}
+
+              {!svc.error && svc.data && (
+                <pre
+                  style={{
+                    marginTop: 4,
+                    maxHeight: 80,
+                    overflow: "auto",
+                    background: "rgba(255,255,255,0.05)",
+                    padding: 6,
+                    borderRadius: 4,
+                    fontSize: 10,
+                    fontFamily: "Menlo, monospace",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word"
+                  }}
+                >
+                  {JSON.stringify(svc.data, null, 2)}
+                </pre>
+              )}
             </div>
-          )}
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }
 
