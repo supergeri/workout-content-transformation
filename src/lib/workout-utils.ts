@@ -1,4 +1,4 @@
-import { Block, Exercise, WorkoutStructure } from '../types/workout';
+import { Block, Exercise, WorkoutStructure, Superset } from '../types/workout';
 
 /**
  * Generate a unique ID for blocks and exercises
@@ -29,6 +29,14 @@ export function addIdsToWorkout(workout: WorkoutStructure): WorkoutStructure {
         ...exercise,
         id: exercise.id || generateId(),
       })),
+      supersets: (block.supersets || []).map(superset => ({
+        ...superset,
+        id: superset.id || generateId(),
+        exercises: (superset.exercises || []).map(exercise => ({
+          ...exercise,
+          id: exercise.id || generateId(),
+        })),
+      })),
     })),
   };
 }
@@ -43,6 +51,14 @@ export function cloneBlock(block: Block): Block {
     exercises: (block.exercises || []).map(exercise => ({
       ...exercise,
       id: generateId(),
+    })),
+    supersets: (block.supersets || []).map(superset => ({
+      ...superset,
+      id: generateId(),
+      exercises: (superset.exercises || []).map(exercise => ({
+        ...exercise,
+        id: generateId(),
+      })),
     })),
   };
 }
@@ -94,8 +110,14 @@ export function getBlockSummary(block: Block): string {
     if (block.rest_between_sets_sec) parts.push(`${block.rest_between_sets_sec}s rest`);
   }
   
-  const exerciseCount = (block.exercises || []).length;
-  return parts.length > 0 ? parts.join(' • ') : `${exerciseCount} exercise${exerciseCount !== 1 ? 's' : ''}`;
+  // Count exercises from both block-level and supersets
+  const blockExercises = (block.exercises || []).length;
+  const supersetExercises = (block.supersets || []).reduce(
+    (sum, ss) => sum + (ss.exercises?.length || 0),
+    0
+  );
+  const totalExerciseCount = blockExercises + supersetExercises;
+  return parts.length > 0 ? parts.join(' • ') : `${totalExerciseCount} exercise${totalExerciseCount !== 1 ? 's' : ''}`;
 }
 
 /**
@@ -204,6 +226,114 @@ export function getStructureDefaults(structure: WorkoutStructureType | null): Pa
         rest_between_sets_sec: null,
       };
   }
+}
+
+/**
+ * Format workout structure as text description for Strava
+ */
+export function formatWorkoutForStrava(workout: WorkoutStructure): string {
+  if (!workout || !workout.blocks || workout.blocks.length === 0) {
+    return workout?.title || 'Workout';
+  }
+
+  const lines: string[] = [];
+  
+  // Add title if available
+  if (workout.title) {
+    lines.push(workout.title);
+    lines.push('');
+  }
+
+  // Format each block
+  workout.blocks.forEach((block, blockIdx) => {
+    const blockLabel = block.label || block.name || block.type || `Block ${blockIdx + 1}`;
+    lines.push(`${blockLabel}:`);
+    
+    // Block-level exercises
+    if (block.exercises && block.exercises.length > 0) {
+      block.exercises.forEach((exercise, exerciseIdx) => {
+        const exerciseLine = formatExerciseForStrava(exercise, exerciseIdx);
+        if (exerciseLine) {
+          lines.push(`  ${exerciseLine}`);
+        }
+      });
+    }
+    
+    // Superset exercises
+    if (block.supersets && block.supersets.length > 0) {
+      block.supersets.forEach((superset, supersetIdx) => {
+        lines.push(`  Superset ${supersetIdx + 1}:`);
+        if (superset.exercises && superset.exercises.length > 0) {
+          superset.exercises.forEach((exercise, exerciseIdx) => {
+            const exerciseLine = formatExerciseForStrava(exercise, exerciseIdx, true);
+            if (exerciseLine) {
+              lines.push(`    ${String.fromCharCode(65 + exerciseIdx)}. ${exerciseLine}`);
+            }
+          });
+        }
+      });
+    }
+    
+    lines.push('');
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * Format a single exercise for Strava description
+ */
+function formatExerciseForStrava(exercise: Exercise, index: number, inSuperset: boolean = false): string {
+  const parts: string[] = [];
+  
+  // Exercise name
+  parts.push(exercise.name || `Exercise ${index + 1}`);
+  
+  // Sets
+  if (exercise.sets) {
+    parts.push(`${exercise.sets} sets`);
+  }
+  
+  // Reps
+  if (exercise.reps) {
+    parts.push(`${exercise.reps} reps`);
+  } else if (exercise.reps_range) {
+    parts.push(`${exercise.reps_range} reps`);
+  }
+  
+  // Duration
+  if (exercise.duration_sec) {
+    const minutes = Math.floor(exercise.duration_sec / 60);
+    const seconds = exercise.duration_sec % 60;
+    if (minutes > 0) {
+      parts.push(`${minutes}m ${seconds}s`);
+    } else {
+      parts.push(`${seconds}s`);
+    }
+  }
+  
+  // Distance
+  if (exercise.distance_m) {
+    if (exercise.distance_m >= 1000) {
+      parts.push(`${(exercise.distance_m / 1000).toFixed(2)}km`);
+    } else {
+      parts.push(`${exercise.distance_m}m`);
+    }
+  } else if (exercise.distance_range) {
+    parts.push(exercise.distance_range);
+  }
+  
+  // Rest
+  if (exercise.rest_sec) {
+    parts.push(`${exercise.rest_sec}s rest`);
+  }
+  
+  // Type
+  if (exercise.type) {
+    parts.push(`(${exercise.type})`);
+  }
+  
+  return parts.join(' • ');
 }
 
 
