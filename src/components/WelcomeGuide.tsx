@@ -9,7 +9,6 @@ import {
   FileText,
   ShieldCheck,
   Download,
-  ArrowRight,
   X,
   Play
 } from 'lucide-react';
@@ -113,11 +112,6 @@ export function WelcomeGuide({ onGetStarted }: WelcomeGuideProps) {
                       ))}
                     </div>
                   </CardContent>
-                  {idx < steps.length - 1 && (
-                    <div className="absolute bottom-0 right-6 transform translate-y-1/2">
-                      <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                  )}
                 </Card>
               ))}
             </div>
