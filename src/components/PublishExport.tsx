@@ -453,6 +453,41 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
         </Card>
       )}
 
+      {/* Add to Strava - Separate card */}
+      {stravaConnected && workout && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Add to Strava
+            </CardTitle>
+            <CardDescription>
+              Create a manual workout activity on Strava with structured exercise details
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="default"
+              onClick={handleAddToStrava}
+              disabled={isAddingToStrava}
+              className="w-full"
+            >
+              {isAddingToStrava ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Adding to Strava...
+                </>
+              ) : (
+                <>
+                  <Activity className="w-4 h-4 mr-2" />
+                  Add to Strava
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Export Formats */}
       <Card>
         <CardHeader>
@@ -467,39 +502,6 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Add to Strava button - Only show if Strava is connected */}
-          {stravaConnected && workout && (
-            <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <Activity className="w-4 h-4 text-orange-600" />
-                  <Label className="font-medium">Add to Strava</Label>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Create a manual workout activity on Strava with structured exercise details
-                </p>
-              </div>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleAddToStrava}
-                disabled={isAddingToStrava}
-              >
-                {isAddingToStrava ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  <>
-                    <Activity className="w-4 h-4 mr-2" />
-                    Add to Strava
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-
           {/* Auto-enhance Strava toggle - Only show if Strava is connected */}
           {stravaConnected && (
             <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
