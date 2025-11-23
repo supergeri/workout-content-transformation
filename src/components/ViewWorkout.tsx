@@ -1,7 +1,8 @@
+import { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { X, Clock, Watch, Bike, Dumbbell } from 'lucide-react';
+import { X, Clock, Watch, Bike, Dumbbell, Trash2 } from 'lucide-react';
 import { WorkoutHistoryItem } from '../lib/workout-history';
 import { Block, Exercise } from '../types/workout';
 import { getDeviceById, DeviceId } from '../lib/devices';
@@ -50,38 +51,70 @@ function formatDate(dateString: string): string {
   });
 }
 
-// Helper function to get structure display name
-function getStructureDisplayName(structure: string | null | undefined): string {
-  if (!structure) return 'Straight Sets';
-  const structureMap: Record<string, string> = {
-    'superset': 'Superset',
-    'circuit': 'Circuit',
-    'tabata': 'Tabata',
-    'emom': 'EMOM',
-    'amrap': 'AMRAP',
-    'for-time': 'For Time',
-    'rounds': 'Rounds',
-    'sets': 'Sets',
-    'regular': 'Regular',
-  };
-  return structureMap[structure] || structure;
+// Helper function to get exercise measurement display
+function getExerciseMeasurement(exercise: Exercise): string {
+  if (exercise.distance_m) {
+    return `${exercise.distance_m}m`;
+  }
+  if (exercise.distance_range) {
+    return exercise.distance_range;
+  }
+  if (exercise.reps) {
+    return `${exercise.reps} reps`;
+  }
+  if (exercise.reps_range) {
+    return `${exercise.reps_range} reps`;
+  }
+  if (exercise.duration_sec) {
+    const minutes = Math.round(exercise.duration_sec / 60);
+    return `${minutes} min`;
+  }
+  return '';
 }
 
 export function ViewWorkout({ workout, onClose }: Props) {
   const workoutData = workout.workout;
   const blocks = workoutData?.blocks || [];
   const hasExports = !!(workout.exports);
-  const deviceInfo = getDeviceById(workout.device as DeviceId);
 
-  // Calculate total exercise count across all blocks
-  const totalExercises = blocks.reduce((sum, block) => {
-    const blockExercises = block.exercises?.length || 0;
-    const supersetExercises = block.supersets?.reduce(
-      (ssSum, ss) => ssSum + (ss.exercises?.length || 0),
-      0
-    ) || 0;
-    return sum + blockExercises + supersetExercises;
-  }, 0);
+  // Flatten all exercises from all blocks and supersets into a single list
+  const allExercises: Array<{ exercise: Exercise; letter: string }> = [];
+  let letterIndex = 0;
+
+  blocks.forEach((block: Block) => {
+    // Add block-level exercises
+    if (block.exercises && block.exercises.length > 0) {
+      block.exercises.forEach((exercise: Exercise) => {
+        const letter = String.fromCharCode(65 + letterIndex); // A, B, C, etc.
+        allExercises.push({ exercise, letter });
+        letterIndex++;
+      });
+    }
+
+    // Add superset exercises
+    if (block.supersets && block.supersets.length > 0) {
+      block.supersets.forEach((superset) => {
+        if (superset.exercises && superset.exercises.length > 0) {
+          superset.exercises.forEach((exercise: Exercise) => {
+            const letter = String.fromCharCode(65 + letterIndex);
+            allExercises.push({ exercise, letter });
+            letterIndex++;
+          });
+        }
+      });
+    }
+  });
+
+  // Handle escape key to close
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   return (
     <div
@@ -89,7 +122,7 @@ export function ViewWorkout({ workout, onClose }: Props) {
       onClick={onClose}
     >
       <Card
-        className="w-full max-w-4xl h-[85vh] flex flex-col"
+        className="w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Section (Fixed) */}
@@ -113,9 +146,9 @@ export function ViewWorkout({ workout, onClose }: Props) {
                 </div>
                 <div>
                   <span>{blocks.length} block{blocks.length !== 1 ? 's' : ''}</span>
-                  {totalExercises > 0 && (
+                  {allExercises.length > 0 && (
                     <span className="ml-2">
-                      • {totalExercises} exercise{totalExercises !== 1 ? 's' : ''}
+                      • {allExercises.length} exercise{allExercises.length !== 1 ? 's' : ''}
                     </span>
                   )}
                 </div>
@@ -135,194 +168,49 @@ export function ViewWorkout({ workout, onClose }: Props) {
 
         {/* Content Area (Scrollable) */}
         <div className="flex-1 overflow-y-auto p-6">
-          {blocks.length === 0 ? (
+          {allExercises.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">
               <Dumbbell className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No workout blocks defined</p>
+              <p>No exercises found in this workout</p>
             </div>
           ) : (
-            <div className="space-y-6">
-              {blocks.map((block: Block, blockIdx: number) => {
-                const blockExercises = block.exercises || [];
-                const supersets = block.supersets || [];
-                const blockExerciseCount =
-                  blockExercises.length +
-                  supersets.reduce((sum, ss) => sum + (ss.exercises?.length || 0), 0);
+            <div className="space-y-1">
+              {allExercises.map((item, idx) => {
+                const { exercise, letter } = item;
+                const measurement = getExerciseMeasurement(exercise);
+                const exerciseType = exercise.type || '';
 
                 return (
-                  <div key={block.id || blockIdx} className="border rounded-lg overflow-hidden">
-                    {/* Block Header */}
-                    <div className="bg-muted px-4 py-3 border-b">
-                      <h3 className="font-semibold text-base mb-1">{block.label || `Block ${blockIdx + 1}`}</h3>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        {block.structure && (
-                          <span>{getStructureDisplayName(block.structure)}</span>
-                        )}
-                        {blockExerciseCount > 0 && (
-                          <span>{blockExerciseCount} exercise{blockExerciseCount !== 1 ? 's' : ''}</span>
-                        )}
-                        {block.default_sets && (
-                          <span>{block.default_sets} sets</span>
-                        )}
-                        {(block.rest_between_sec || block.rest_between_rounds_sec) && (
-                          <span>
-                            {(block.rest_between_sec || block.rest_between_rounds_sec)}s rest
-                          </span>
-                        )}
-                      </div>
+                  <div
+                    key={exercise.id || idx}
+                    className="flex items-center gap-3 p-3 border-b border-border/50 hover:bg-muted/30 transition-colors"
+                  >
+                    {/* Letter prefix */}
+                    <div className="font-semibold text-sm text-muted-foreground w-6 shrink-0">
+                      {letter}.
                     </div>
 
-                    {/* Block Content */}
-                    <div className="p-4 space-y-4">
-                      {/* Block-Level Exercises */}
-                      {blockExercises.length > 0 && (
-                        <div className="space-y-2">
-                          {blockExercises.map((exercise: Exercise, exIdx: number) => (
-                            <div
-                              key={exercise.id || exIdx}
-                              className="p-3 bg-background border rounded-md"
-                            >
-                              <div className="font-medium text-sm mb-2">{exercise.name}</div>
-                              <div className="flex flex-wrap gap-2">
-                                {exercise.sets && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.sets} sets
-                                  </Badge>
-                                )}
-                                {exercise.reps && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.reps} reps
-                                  </Badge>
-                                )}
-                                {exercise.reps_range && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.reps_range} reps
-                                  </Badge>
-                                )}
-                                {exercise.duration_sec && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.duration_sec}s
-                                  </Badge>
-                                )}
-                                {exercise.distance_m && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.distance_m}m
-                                  </Badge>
-                                )}
-                                {exercise.distance_range && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.distance_range}
-                                  </Badge>
-                                )}
-                                {exercise.rest_sec && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {exercise.rest_sec}s rest
-                                  </Badge>
-                                )}
-                                {exercise.type && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    {exercise.type}
-                                  </Badge>
-                                )}
-                              </div>
-                              {exercise.notes && (
-                                <p className="text-xs italic text-muted-foreground mt-2">{exercise.notes}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                    {/* Exercise name */}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{exercise.name}</div>
+                    </div>
 
-                      {/* Supersets */}
-                      {supersets.length > 0 && (
-                        <div className="space-y-4">
-                          {supersets.map((superset, ssIdx) => (
-                            <div
-                              key={ssIdx}
-                              className="border-l-4 border-primary pl-3"
-                            >
-                              <div className="mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  Superset {ssIdx + 1}
-                                </Badge>
-                                {superset.rest_between_sec && (
-                                  <span className="text-xs text-muted-foreground ml-2">
-                                    {superset.rest_between_sec}s rest
-                                  </span>
-                                )}
-                              </div>
-                              <div className="space-y-2 ml-5">
-                                {(superset.exercises || []).map((exercise: Exercise, exIdx: number) => {
-                                  const letter = String.fromCharCode(65 + exIdx); // A, B, C, etc.
-                                  return (
-                                    <div
-                                      key={exercise.id || exIdx}
-                                      className="p-3 bg-background border rounded-md"
-                                    >
-                                      <div className="font-medium text-sm mb-2">
-                                        {letter}. {exercise.name}
-                                      </div>
-                                      <div className="flex flex-wrap gap-2">
-                                        {exercise.sets && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.sets} sets
-                                          </Badge>
-                                        )}
-                                        {exercise.reps && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.reps} reps
-                                          </Badge>
-                                        )}
-                                        {exercise.reps_range && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.reps_range} reps
-                                          </Badge>
-                                        )}
-                                        {exercise.duration_sec && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.duration_sec}s
-                                          </Badge>
-                                        )}
-                                        {exercise.distance_m && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.distance_m}m
-                                          </Badge>
-                                        )}
-                                        {exercise.distance_range && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.distance_range}
-                                          </Badge>
-                                        )}
-                                        {exercise.rest_sec && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {exercise.rest_sec}s rest
-                                          </Badge>
-                                        )}
-                                        {exercise.type && (
-                                          <Badge variant="secondary" className="text-xs">
-                                            {exercise.type}
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      {exercise.notes && (
-                                        <p className="text-xs italic text-muted-foreground mt-2">{exercise.notes}</p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                    {/* Measurement and type badges */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {measurement && (
+                        <Badge variant="outline" className="text-xs">
+                          {measurement}
+                        </Badge>
                       )}
-
-                      {/* Empty State for Block */}
-                      {blockExercises.length === 0 && supersets.length === 0 && (
-                        <div className="text-center text-muted-foreground text-sm py-4">
-                          No exercises in this block
-                        </div>
+                      {exerciseType && (
+                        <Badge variant="outline" className="text-xs">
+                          {exerciseType}
+                        </Badge>
                       )}
                     </div>
+
+                    {/* Trash icon (read-only, so we can hide it or make it non-functional) */}
+                    <div className="w-6 shrink-0" />
                   </div>
                 );
               })}
@@ -333,4 +221,3 @@ export function ViewWorkout({ workout, onClose }: Props) {
     </div>
   );
 }
-
