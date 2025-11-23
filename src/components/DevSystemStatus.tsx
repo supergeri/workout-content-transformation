@@ -13,10 +13,9 @@ type ServiceState = ServiceConfig & {
 
 const SERVICES: ServiceConfig[] = [
   { name: "Workout Ingestor API", url: "http://localhost:8004/version" },
-  // Note: Other APIs don't have /version endpoints yet
-  // { name: "Mapper API", url: "http://localhost:8001/version" },
-  // { name: "Strava Sync API", url: "http://localhost:8000/version" },
-  // { name: "Garmin Sync API", url: "http://localhost:8002/version" },
+  { name: "Mapper API", url: "http://localhost:8001/health" },
+  { name: "Strava Sync API", url: "http://localhost:8000/health" },
+  { name: "Garmin Sync API", url: "http://localhost:8002/health" },
 ];
 
 export function DevSystemStatus() {
@@ -39,7 +38,9 @@ export function DevSystemStatus() {
 
         try {
           const res = await fetch(svc.url, {
-            headers: { Accept: "application/json" }
+            headers: { Accept: "application/json" },
+            // Add timeout to prevent hanging
+            signal: AbortSignal.timeout(5000)
           });
 
           if (!res.ok) {
@@ -49,7 +50,13 @@ export function DevSystemStatus() {
             state.data = data;
           }
         } catch (err: any) {
-          state.error = err?.message ?? "Network error";
+          if (err.name === 'AbortError') {
+            state.error = "Timeout";
+          } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+            state.error = "Not reachable";
+          } else {
+            state.error = err?.message ?? "Network error";
+          }
         }
 
         results.push(state);
