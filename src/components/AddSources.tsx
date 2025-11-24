@@ -4,14 +4,15 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Youtube, Image, Sparkles, Plus, Trash2, Loader2, Upload, X, Eye, Sparkles as VisionIcon, XCircle } from 'lucide-react';
+import { Youtube, Image, Sparkles, Plus, Trash2, Loader2, Upload, X, Eye, Sparkles as VisionIcon, XCircle, Copy, Check } from 'lucide-react';
 import { Source, SourceType, WorkoutStructure } from '../types/workout';
 import { Textarea } from './ui/textarea';
 import { WorkoutTemplates } from './WorkoutTemplates';
 import { getImageProcessingMethod } from '../lib/preferences';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { Info } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 
 interface AddSourcesProps {
   onGenerate: (sources: Source[]) => void;
@@ -19,6 +20,164 @@ interface AddSourcesProps {
   loading: boolean;
   progress?: string | null;
   onCancel?: () => void;
+}
+
+// Universal AI prompt component for copying (collapsible)
+function AIPromptCopyButton() {
+  const [copied, setCopied] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const prompt = `WORKOUT FORMAT RULES — USE EXACTLY THIS FORMAT EVERY TIME
+
+Your job is to generate workout plans in the exact text format below, with no extra commentary, no explanations, and no deviations.
+
+OUTPUT FORMAT (MUST MATCH EXACTLY)
+
+Title: [Workout Name]
+
+Block: [Block Name]
+- Exercise Name | sets×reps | type:type | note:optional notes
+
+FORMAT RULES
+
+1. Title must use: Title: [Workout Name]
+
+2. Every section must start with: Block: [Block Name]
+   Examples: Warm-Up, Main Strength, Conditioning, Finisher, Cool-Down
+
+3. Exercises must start with "- " or "•" (either is acceptable)
+
+4. Exercise line format: Exercise Name | sets×reps | type:type | note:optional notes
+   Examples:
+   - 3×8 = 3 sets of 8 reps
+   - 4×6–8 = 4 sets of 6–8 reps
+   - 3×AMRAP = as many reps as possible
+   - If no sets/reps: omit it → Exercise Name | type:warmup
+
+5. Valid types:
+   - strength
+   - warmup
+   - cooldown
+   - cardio
+   - amrap
+
+6. Use ONLY real exercise names. Examples: Bench Press, Pull-Ups, Wall Balls, Deadlift
+   Do NOT generate placeholders like "Exercise 1", "Set 1", "Do 20 steps," etc.
+
+7. NEVER add extra explanations before or after the workout. The output must be only the formatted workout.
+
+RESPONSE STYLE REQUIREMENT
+- No bullet points outside exercises
+- No code fences unless shown above
+- No chatty text
+- No intros, no outros
+- Only output the formatted workout
+
+EXAMPLE OUTPUT
+
+Title: Lower Body Strength
+
+Block: Warm-Up
+- Leg swings | type:warmup
+- Bodyweight squats | type:warmup
+
+Block: Main Strength
+- Back Squat | 4×6–8 | type:strength | note:Heavy, focus on depth
+- Romanian Deadlift | 3×8 | type:strength
+- Walking Lunges | 3×10 | type:strength
+
+Block: Cool-Down
+- Hip flexor stretch | type:cooldown
+
+TEST REQUESTS YOU CAN USE
+- Generate a Lower Body workout
+- Create an Abs workout
+- Make an Upper Body Strength workout
+- Give me a Full Body workout
+- Create a Cardio workout
+
+FINAL RULE
+Always follow the exact format above. No exceptions.`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-2">
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-between"
+        >
+          <span className="flex items-center gap-2">
+            <Copy className="w-3 h-3" />
+            {isOpen ? 'Hide Prompt' : 'Show Prompt to Copy'}
+          </span>
+          {isOpen ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-3">
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Step 1: Copy this prompt</p>
+          <div className="relative">
+            <pre className="text-xs bg-background p-3 rounded border overflow-x-auto max-h-64 overflow-y-auto font-mono whitespace-pre-wrap">
+              {prompt}
+            </pre>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+              className="absolute top-2 right-2"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3 mr-1" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3 mr-1" />
+                  Copy Prompt
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+        
+        <div className="space-y-2 pt-2 border-t">
+          <p className="text-xs font-medium text-muted-foreground">Step 2: Paste into your AI tool and ask for a workout</p>
+          <div className="bg-muted/50 p-2 rounded text-xs space-y-1">
+            <p className="font-medium">Try saying:</p>
+            <ul className="list-disc list-inside ml-2 space-y-0.5 text-muted-foreground">
+              <li>"Generate a Lower Body workout"</li>
+              <li>"Create an Abs workout"</li>
+              <li>"Make an Upper Body Strength workout"</li>
+              <li>"Give me a Full Body workout"</li>
+            </ul>
+          </div>
+        </div>
+        
+        <div className="space-y-2 pt-2 border-t">
+          <p className="text-xs font-medium text-muted-foreground">Step 3: Copy the workout and paste it above</p>
+          <p className="text-xs text-muted-foreground">
+            The AI will generate a workout in the correct format. Just copy it and paste it in the text area above, then click "Add Description".
+          </p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 export function AddSources({ onGenerate, onLoadTemplate, loading, progress, onCancel }: AddSourcesProps) {
@@ -333,9 +492,12 @@ export function AddSources({ onGenerate, onLoadTemplate, loading, progress, onCa
 
               <TabsContent value="ai-text" className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Workout Description</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Workout Description</Label>
+                    <Badge variant="outline" className="text-xs">Accepts: Canonical format, Free-form text, or JSON</Badge>
+                  </div>
                   <Textarea
-                    placeholder="Describe your workout: 5x 400m sprints, 3 sets of 10 push-ups..."
+                    placeholder="Paste your workout text here (canonical format, free-form, or JSON), or use the AI prompt below to generate one..."
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
                     rows={4}
@@ -344,7 +506,53 @@ export function AddSources({ onGenerate, onLoadTemplate, loading, progress, onCa
                     <Plus className="w-4 h-4 mr-2" />
                     Add Description
                   </Button>
+                  <p className="text-xs text-muted-foreground">
+                    💡 Tip: You can always paste canonical format text here (Title:, Block:, exercises) - it will be automatically detected and parsed.
+                  </p>
                 </div>
+                
+                <Card className="bg-muted/30 border-dashed">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium">💡 AI Tool Prompt</CardTitle>
+                      <Badge variant="outline" className="text-xs">Universal</Badge>
+                    </div>
+                    <CardDescription className="text-xs">
+                      Copy this prompt to ChatGPT, Grok, DeepSeek, or any AI tool for perfect workout formatting
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <AIPromptCopyButton />
+                    
+                    <div className="pt-2 border-t space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                        💾 Use Pre-Made GPT (Easiest)
+                        <Badge variant="secondary" className="text-xs">Recommended</Badge>
+                      </p>
+                      <div className="bg-background/50 p-2 rounded text-xs space-y-2">
+                        <div className="bg-green-50 dark:bg-green-950/20 p-2 rounded border border-green-200 dark:border-green-800">
+                          <p className="font-medium text-foreground mb-1">✅ Quick Start:</p>
+                          <ol className="list-decimal list-inside ml-2 space-y-0.5 text-muted-foreground text-xs">
+                            <li>Click: <a href="https://chatgpt.com/g/g-6923bf09941081919d29cb2c964c3a00-canonical-workout-builder" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Canonical Workout Builder GPT</a></li>
+                            <li>Click <strong>"Use"</strong> → Ask: <span className="italic">"Create a full body workout"</span></li>
+                            <li>Copy the output → Paste above → Click "Add Description"</li>
+                          </ol>
+                        </div>
+                        
+                        <div className="pt-2 border-t">
+                          <p className="font-medium text-foreground mb-1 text-xs">🔧 Want to create your own?</p>
+                          <p className="text-muted-foreground text-xs mb-1">Go to <a href="https://chat.openai.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">chat.openai.com</a> → Explore GPTs → Create GPT</p>
+                          <p className="text-muted-foreground text-xs">In the chat box, say: <span className="italic">"Create a GPT that outputs workouts in canonical format with Title, Block, and exercises"</span></p>
+                          <p className="text-muted-foreground text-xs mt-1">Or paste the full prompt from above into the Configure → Instructions field.</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <p className="text-xs text-muted-foreground">
+                      This prompt ensures AI tools generate workouts in the correct format that will parse perfectly every time.
+                    </p>
+                  </CardContent>
+                </Card>
               </TabsContent>
             </Tabs>
           </CardContent>

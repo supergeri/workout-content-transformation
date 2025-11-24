@@ -281,13 +281,51 @@ export async function generateWorkoutStructure(
     }
 
     if (source.type === 'ai-text') {
-      workout = await apiCall<WorkoutStructure>('/ingest/ai_workout', {
-        method: 'POST',
-        body: source.content,
-        headers: {
-          'Content-Type': 'text/plain',
-        },
-      }, signal);
+      // Normalize pasted text - handle whitespace issues from copy/paste
+      // Preserve line breaks but normalize multiple spaces/tabs
+      let normalizedContent = source.content
+        .replace(/\r\n/g, '\n')  // Normalize Windows line endings
+        .replace(/\r/g, '\n')    // Normalize old Mac line endings
+        .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space
+        .trim();
+      
+      // Auto-detect JSON format
+      const trimmedContent = normalizedContent;
+      const isJson = trimmedContent.startsWith('{') || trimmedContent.startsWith('[');
+      
+      if (isJson) {
+        try {
+          // Try to parse as JSON to validate
+          const jsonData = JSON.parse(trimmedContent);
+          // If valid JSON, use JSON endpoint
+          workout = await apiCall<WorkoutStructure>('/ingest/json', {
+            method: 'POST',
+            body: JSON.stringify(jsonData),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }, signal);
+        } catch (e) {
+          // If JSON parsing fails, fall back to text parser
+          // (might be canonical format or freeform text)
+          workout = await apiCall<WorkoutStructure>('/ingest/ai_workout', {
+            method: 'POST',
+            body: normalizedContent,
+            headers: {
+              'Content-Type': 'text/plain',
+            },
+          }, signal);
+        }
+      } else {
+        // Not JSON, use text parser (handles canonical format and freeform)
+        workout = await apiCall<WorkoutStructure>('/ingest/ai_workout', {
+          method: 'POST',
+          body: normalizedContent,
+          headers: {
+            'Content-Type': 'text/plain',
+          },
+        }, signal);
+      }
       break;
     }
   }

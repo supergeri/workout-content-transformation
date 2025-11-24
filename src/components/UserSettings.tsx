@@ -396,24 +396,61 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="flex items-center gap-2">
-                        <Label className="text-base font-medium">Parsing Method</Label>
-                        <Badge variant="secondary">Rule-Based</Badge>
+                        <Label className="text-base font-medium">Parsing Modes</Label>
+                        <Badge variant="secondary">Auto-Detected</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Workout text is parsed using a <strong>rule-based parser</strong> (<code className="text-xs bg-muted px-1 py-0.5 rounded">ParserService.parse_ai_workout</code>) that uses regex patterns to extract exercises, sets, reps, and blocks from formatted text.
+                        The workout ingestor now supports <strong>three parsing modes</strong> that are automatically detected:
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        The parser can handle various formats including:
-                      </p>
-                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1 ml-2">
-                        <li>Emoji-formatted headers (e.g., "🔥 Warm-Up (10 min):")</li>
-                        <li>Numbered exercise lists (e.g., "1. Exercise Name – 4 sets x 5–8 reps")</li>
-                        <li>Bullet points (e.g., "• Exercise x 20")</li>
-                        <li>Block structures with sections and durations</li>
-                        <li>Set and rep ranges (e.g., "5–8 reps", "4 sets x 8–10 reps")</li>
-                      </ul>
+                      
+                      <div className="space-y-3">
+                        <div className="border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-start gap-2 mb-2">
+                            <Badge variant="outline" className="bg-blue-500/10 text-blue-700 dark:text-blue-400">1. JSON Mode</Badge>
+                            <span className="text-xs text-muted-foreground">(Auto-detected)</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Direct JSON input bypasses text parsing entirely. Paste a <code className="text-xs bg-background px-1 py-0.5 rounded">WorkoutStructure</code> JSON object for instant processing.
+                          </p>
+                          <p className="text-xs font-medium">Format: <code className="text-xs bg-background px-1 py-0.5 rounded">{"{ \"title\": \"...\", \"blocks\": [...] }"}</code></p>
+                        </div>
+
+                        <div className="border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-start gap-2 mb-2">
+                            <Badge variant="outline" className="bg-green-500/10 text-green-700 dark:text-green-400">2. Canonical Format</Badge>
+                            <span className="text-xs text-muted-foreground">(Auto-detected)</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Structured format with <code className="text-xs bg-background px-1 py-0.5 rounded">Title:</code> and <code className="text-xs bg-background px-1 py-0.5 rounded">Block:</code> markers. More reliable than free-form text.
+                          </p>
+                          <p className="text-xs font-medium">Format:</p>
+                          <pre className="text-xs bg-background p-2 rounded mt-1 overflow-x-auto">
+{`Title: Workout Name
+
+Block: Warm-Up
+- Exercise | 3×8 | type:strength`}
+                          </pre>
+                        </div>
+
+                        <div className="border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-start gap-2 mb-2">
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400">3. Free-Form Text</Badge>
+                            <span className="text-xs text-muted-foreground">(Legacy)</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Traditional bullet-point format. Still supported for backward compatibility.
+                          </p>
+                          <p className="text-xs font-medium">Formats:</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside ml-2 mt-1">
+                            <li>Bullet points (• Exercise Name – sets×reps)</li>
+                            <li>Section headers (Warm-up:, Main:, etc.)</li>
+                            <li>Compact format (Exercise – 4×6–8)</li>
+                            <li>AMRAP exercises (Exercise – 3×AMRAP)</li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
 
                     <Separator />
@@ -451,17 +488,26 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
                       </ul>
                     </div>
 
-                    <Alert className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+                    <Alert className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 mt-3">
                       <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       <AlertDescription className="text-xs text-blue-800 dark:text-blue-200">
-                        <strong>Note:</strong> This is a rule-based parser (not AI-powered). For best results, use clearly formatted workout text with consistent structure. The parser works offline and requires no API keys.
+                        <strong>Auto-Detection:</strong> The system automatically detects which format you're using. JSON is checked first, then canonical format, then free-form text. No manual selection needed!
                       </AlertDescription>
                     </Alert>
+                    
+                    <div className="text-xs text-muted-foreground space-y-1 mt-3">
+                      <p><strong>Recommendations:</strong></p>
+                      <ul className="list-disc list-inside ml-2 space-y-0.5">
+                        <li>Use <strong>Canonical Format</strong> for AI-generated workouts (most reliable)</li>
+                        <li>Use <strong>JSON Mode</strong> for programmatic integrations or power users</li>
+                        <li>Free-form text still works but may have parsing edge cases</li>
+                      </ul>
+                    </div>
                   </div>
 
                   <div className="pt-2 border-t">
                     <p className="text-xs text-muted-foreground">
-                      The parser is continuously improved to handle more workout formats. If you encounter parsing issues, please report them with a sample of your workout text.
+                      See <code className="text-xs bg-muted px-1 py-0.5 rounded">docs/workspace/CANONICAL_FORMAT_MIGRATION_GUIDE.md</code> for detailed format specifications and migration guide.
                     </p>
                   </div>
                 </CardContent>
