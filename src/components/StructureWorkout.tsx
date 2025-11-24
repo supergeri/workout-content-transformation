@@ -13,6 +13,7 @@ import { DeviceId, getDevicesByIds, getDeviceById } from '../lib/devices';
 import { ExerciseSearch } from './ExerciseSearch';
 import { Badge } from './ui/badge';
 import { addIdsToWorkout, generateId, getStructureDisplayName } from '../lib/workout-utils';
+import { EditExerciseDialog } from './EditExerciseDialog';
 
 type Props = {
   workout: WorkoutStructure;
@@ -21,6 +22,7 @@ type Props = {
   onValidate: () => void;
   onSave?: () => void | Promise<void>;
   isEditingFromHistory?: boolean;
+  isCreatingFromScratch?: boolean;
   loading: boolean;
   selectedDevice: DeviceId;
   onDeviceChange: (device: DeviceId) => void;
@@ -71,42 +73,28 @@ function DraggableExercise({
   }));
 
   const getDisplayName = () => {
-    // Show count in the name for easier scanning, but only if not already included
-    const name = exercise.name || '';
-    
-    // Check if name already starts with the rep count/distance/duration
-    if (exercise.reps) {
-      const repsStr = String(exercise.reps);
-      // Check if name already starts with the rep count (with or without space)
-      if (name.startsWith(repsStr + ' ') || name.startsWith(repsStr + '\t')) {
-        return name; // Already includes rep count
-      }
-      return `${repsStr} ${name}`;
-    } else if (exercise.distance_m) {
-      const distanceStr = `${exercise.distance_m}m`;
-      // Check if name already starts with the distance (case-insensitive)
-      if (name.toLowerCase().startsWith(distanceStr.toLowerCase() + ' ') || 
-          name.toLowerCase().startsWith(distanceStr.toLowerCase() + '\t')) {
-        return name; // Already includes distance
-      }
-      return `${distanceStr} ${name}`;
-    } else if (exercise.duration_sec) {
-      const durationStr = `${exercise.duration_sec}s`;
-      // Check if name already starts with the duration
-      if (name.startsWith(durationStr + ' ') || name.startsWith(durationStr + '\t')) {
-        return name; // Already includes duration
-      }
-      return `${durationStr} ${name}`;
-    }
-    return name;
+    // Just return the exercise name - don't prepend duration/distance
+    // Duration/distance will be shown separately in badges
+    return exercise.name || '';
   };
 
   const getDisplayText = () => {
     const parts: string[] = [];
     if (exercise.sets) parts.push(`${exercise.sets} sets`);
+    if (exercise.reps) parts.push(`${exercise.reps} reps`);
     if (exercise.reps_range) parts.push(`${exercise.reps_range} reps`);
-    if (exercise.rest_sec) parts.push(`Rest: ${exercise.rest_sec}s`);
+    if (exercise.duration_sec) {
+      const minutes = Math.floor(exercise.duration_sec / 60);
+      const seconds = exercise.duration_sec % 60;
+      if (minutes > 0) {
+        parts.push(seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`);
+      } else {
+        parts.push(`${seconds}s`);
+      }
+    }
+    if (exercise.distance_m) parts.push(`${exercise.distance_m}m`);
     if (exercise.distance_range) parts.push(`${exercise.distance_range}`);
+    if (exercise.rest_sec) parts.push(`Rest: ${exercise.rest_sec}s`);
     return parts.length > 0 ? parts.join(' • ') : null;
   };
 
@@ -257,6 +245,13 @@ function DraggableBlock({
   const [editingLabel, setEditingLabel] = useState(false);
   const [tempLabel, setTempLabel] = useState(block.label);
   const [isCollapsed, setIsCollapsed] = useState(true);
+
+  // Sync tempLabel when block.label changes (but not when editing)
+  useEffect(() => {
+    if (!editingLabel) {
+      setTempLabel(block.label);
+    }
+  }, [block.label, editingLabel]);
 
   // React to collapse/expand all signal
   useEffect(() => {
@@ -490,6 +485,7 @@ export function StructureWorkout({
   onValidate,
   onSave,
   isEditingFromHistory = false,
+  isCreatingFromScratch = false,
   loading,
   selectedDevice,
   onDeviceChange,
@@ -524,11 +520,26 @@ export function StructureWorkout({
     workout?.blocks?.length || 0,
     workout?.title || '',
     workout?.source || '',
+    // Include block labels to detect changes
+    workout?.blocks?.map(b => b?.label || '').join('|') || '',
     // Stringify block IDs to detect actual changes (with null checks)
     workout?.blocks?.map(b => b?.id || '').join(',') || '',
     workout?.blocks?.map(b => b?.exercises?.map(e => e?.id || '').join(',') || '').join('|') || '',
     workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.id || '').join(',') || '').join('|') || '',
-    workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.exercises?.map(e => e?.id || '').join(',') || '').join('|') || '').join('||') || ''
+    workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.exercises?.map(e => e?.id || '').join(',') || '').join('|') || '').join('||') || '',
+    // Include exercise properties to detect changes to distance, duration, reps, etc.
+    workout?.blocks?.map(b => 
+      b?.exercises?.map(e => 
+        `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.notes || ''}`
+      ).join('||') || ''
+    ).join('|||') || '',
+    workout?.blocks?.map(b => 
+      b?.supersets?.map(ss => 
+        ss?.exercises?.map(e => 
+          `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.notes || ''}`
+        ).join('||') || ''
+      ).join('|||') || ''
+    ).join('||||') || ''
   ]);
 
   const [editingTitle, setEditingTitle] = useState(false);
@@ -618,19 +629,42 @@ export function StructureWorkout({
     onWorkoutChange(newWorkout);
   };
 
-  const updateExercise = (blockIdx: number, exerciseIdx: number, updates: Partial<Exercise>) => {
+  const updateExercise = (blockIdx: number, exerciseIdx: number, updates: Partial<Exercise>, supersetIdx?: number) => {
     const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
-    const exercise = newWorkout.blocks[blockIdx].exercises[exerciseIdx];
-    newWorkout.blocks[blockIdx].exercises[exerciseIdx] = { ...exercise, ...updates };
+    
+    if (supersetIdx !== undefined) {
+      // Update exercise in superset
+      const exercise = newWorkout.blocks[blockIdx].supersets?.[supersetIdx]?.exercises?.[exerciseIdx];
+      if (exercise) {
+        newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises[exerciseIdx] = { ...exercise, ...updates };
+      }
+    } else {
+      // Update exercise in block
+      const exercise = newWorkout.blocks[blockIdx].exercises[exerciseIdx];
+      if (exercise) {
+        newWorkout.blocks[blockIdx].exercises[exerciseIdx] = { ...exercise, ...updates };
+      }
+    }
+    
     onWorkoutChange(newWorkout);
-    setEditingExercise(null);
+    // Note: Don't close dialog here - let EditExerciseDialog manage its own state
   };
 
-  const deleteExercise = (blockIdx: number, exerciseIdx: number) => {
+  const deleteExercise = (blockIdx: number, exerciseIdx: number, supersetIdx?: number) => {
     const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
-    if (newWorkout.blocks[blockIdx].exercises) {
-      newWorkout.blocks[blockIdx].exercises.splice(exerciseIdx, 1);
+    
+    if (supersetIdx !== undefined) {
+      // Delete exercise from superset
+      if (newWorkout.blocks[blockIdx].supersets?.[supersetIdx]?.exercises) {
+        newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises.splice(exerciseIdx, 1);
+      }
+    } else {
+      // Delete exercise from block
+      if (newWorkout.blocks[blockIdx].exercises) {
+        newWorkout.blocks[blockIdx].exercises.splice(exerciseIdx, 1);
+      }
     }
+    
     onWorkoutChange(newWorkout);
   };
 
@@ -774,22 +808,26 @@ export function StructureWorkout({
             </div>
 
             <div className="flex gap-2 flex-wrap">
-              {isEditingFromHistory ? (
+              {(isEditingFromHistory || isCreatingFromScratch) ? (
                 <>
                   {onSave && (
                     <Button onClick={onSave} disabled={loading} className="gap-2">
                       <Save className="w-4 h-4" />
-                      Save Changes
+                      {isCreatingFromScratch ? 'Save Workout' : 'Save Changes'}
                     </Button>
                   )}
-                  <Button onClick={onAutoMap} disabled={loading} variant="outline" className="gap-2">
-                    <Wand2 className="w-4 h-4" />
-                    Re-Auto-Map & Export
-                  </Button>
-                  <Button onClick={onValidate} disabled={loading} variant="outline" className="gap-2">
-                    <ShieldCheck className="w-4 h-4" />
-                    Re-Validate & Review
-                  </Button>
+                  {isEditingFromHistory && (
+                    <>
+                      <Button onClick={onAutoMap} disabled={loading} variant="outline" className="gap-2">
+                        <Wand2 className="w-4 h-4" />
+                        Re-Auto-Map & Export
+                      </Button>
+                      <Button onClick={onValidate} disabled={loading} variant="outline" className="gap-2">
+                        <ShieldCheck className="w-4 h-4" />
+                        Re-Validate & Review
+                      </Button>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -893,118 +931,34 @@ export function StructureWorkout({
         )}
 
         {/* Edit Exercise Dialog */}
-        <Dialog open={!!editingExercise} onOpenChange={(open) => !open && setEditingExercise(null)}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Edit Exercise</DialogTitle>
-              <DialogDescription>
-                Update the exercise details below
-              </DialogDescription>
-            </DialogHeader>
-            {editingExercise && (() => {
-              const { blockIdx, exerciseIdx, supersetIdx } = editingExercise;
-              const exercise = supersetIdx !== undefined
-                ? workoutWithIds.blocks[blockIdx].supersets?.[supersetIdx]?.exercises?.[exerciseIdx]
-                : workoutWithIds.blocks[blockIdx].exercises[exerciseIdx];
-              
-              if (!exercise) {
+        {editingExercise && (() => {
+          const { blockIdx, exerciseIdx, supersetIdx } = editingExercise;
+          // Always read from current workout state to ensure updates are reflected
+          const currentExercise = supersetIdx !== undefined
+            ? workoutWithIds.blocks[blockIdx]?.supersets?.[supersetIdx]?.exercises?.[exerciseIdx]
+            : workoutWithIds.blocks[blockIdx]?.exercises[exerciseIdx];
+          
+          if (!currentExercise) {
+            // Exercise was deleted, close dialog
+            setEditingExercise(null);
+            return null;
+          }
+          
+          return (
+            <EditExerciseDialog
+              key={`${blockIdx}-${exerciseIdx}-${supersetIdx ?? 'block'}`}
+              open={!!editingExercise}
+              exercise={currentExercise}
+              onSave={(updates) => {
+                // Live updates: onSave is called on every change, don't close dialog here
+                updateExercise(blockIdx, exerciseIdx, updates, supersetIdx);
+              }}
+              onClose={() => {
                 setEditingExercise(null);
-                return null;
-              }
-              
-              return (
-                <div className="space-y-4">
-                  <div>
-                    <Label>Exercise Name</Label>
-                    <Input
-                      value={exercise.name}
-                      onChange={(e) => updateExercise(blockIdx, exerciseIdx, { name: e.target.value }, supersetIdx)}
-                      placeholder="Exercise name"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Sets</Label>
-                      <Input
-                        type="number"
-                        value={exercise.sets || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { sets: parseInt(e.target.value) || null })}
-                        placeholder="Sets"
-                      />
-                    </div>
-                    <div>
-                      <Label>Reps</Label>
-                      <Input
-                        type="number"
-                        value={exercise.reps || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { reps: parseInt(e.target.value) || null })}
-                        placeholder="Reps"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Reps Range</Label>
-                      <Input
-                        value={exercise.reps_range || ''}
-                        placeholder="e.g., 10-12"
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { reps_range: e.target.value || null })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Rest (sec)</Label>
-                      <Input
-                        type="number"
-                        value={exercise.rest_sec || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { rest_sec: parseInt(e.target.value) || null })}
-                        placeholder="Rest"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Duration (sec)</Label>
-                      <Input
-                        type="number"
-                        value={exercise.duration_sec || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { duration_sec: parseInt(e.target.value) || null })}
-                        placeholder="Duration"
-                      />
-                    </div>
-                    <div>
-                      <Label>Distance (m)</Label>
-                      <Input
-                        type="number"
-                        value={exercise.distance_m || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { distance_m: parseInt(e.target.value) || null })}
-                        placeholder="Distance"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Distance Range</Label>
-                    <Input
-                      value={exercise.distance_range || ''}
-                      placeholder="e.g., 100-200m"
-                      onChange={(e) => updateExercise(blockIdx, exerciseIdx, { distance_range: e.target.value || null })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Notes</Label>
-                    <Input
-                      value={exercise.notes || ''}
-                      placeholder="Optional notes"
-                      onChange={(e) => updateExercise(blockIdx, exerciseIdx, { notes: e.target.value || null })}
-                    />
-                  </div>
-                  <Button onClick={() => setEditingExercise(null)} className="w-full">
-                    Done
-                  </Button>
-                </div>
-              );
-            })()}
-          </DialogContent>
-        </Dialog>
+              }}
+            />
+          );
+        })()}
 
         {/* Debug JSON Dialog */}
         {showDebugJson && (
