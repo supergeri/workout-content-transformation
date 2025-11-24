@@ -47,6 +47,9 @@ import { useClerkUser } from '../lib/clerk-auth';
 import { WorkoutStructure } from '../types/workout';
 import { WorkoutSelector } from './WorkoutSelector';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { createStravaActivity, checkAndRefreshStravaToken, StravaTokenExpiredError, StravaUnauthorizedError } from '../lib/strava-api';
+import { formatWorkoutForStrava } from '../lib/workout-utils';
+import { isAccountConnected } from '../lib/linked-accounts';
 
 interface PublishExportProps {
   exports: ExportFormats;
@@ -71,6 +74,7 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
   const [isSaving, setIsSaving] = useState(false);
   const [savedWorkoutId, setSavedWorkoutId] = useState<string | null>(null);
   const [showWorkoutSelector, setShowWorkoutSelector] = useState(false);
+  const [isAddingToStrava, setIsAddingToStrava] = useState(false);
   const stravaConnected = isAccountConnectedSync('strava');
 
   const copyToClipboard = async (text: string, format: string) => {
@@ -170,6 +174,109 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
     // if (savedWorkoutId) {
     //   await updateWorkoutExportStatus(savedWorkoutId, profileId, true, selectedDevice);
     // }
+  };
+
+  const handleAddToStrava = async () => {
+    if (!workout || !profileId) {
+      toast.error('Workout data or user profile missing');
+      return;
+    }
+
+    setIsAddingToStrava(true);
+    try {
+      // Check if Strava is connected
+      const isConnected = await isAccountConnected(profileId, 'strava');
+      if (!isConnected) {
+        toast.error('Please connect your Strava account first via OAuth in Settings');
+        setIsAddingToStrava(false);
+        return;
+      }
+
+      // Check and refresh token if needed
+      const tokenValid = await checkAndRefreshStravaToken(profileId);
+      if (!tokenValid) {
+        const isStillConnected = await isAccountConnected(profileId, 'strava');
+        if (!isStillConnected) {
+          toast.error('Please connect your Strava account first via OAuth in Settings');
+          setIsAddingToStrava(false);
+          return;
+        }
+      }
+
+      // Format workout as description
+      const description = formatWorkoutForStrava(workout);
+      
+      // Calculate estimated duration (sum of all exercise durations + rest times)
+      let estimatedDuration = 0;
+      workout.blocks?.forEach(block => {
+        block.exercises?.forEach(exercise => {
+          if (exercise.duration_sec) {
+            estimatedDuration += exercise.duration_sec;
+          }
+          if (exercise.rest_sec) {
+            estimatedDuration += exercise.rest_sec;
+          }
+        });
+        block.supersets?.forEach(superset => {
+          superset.exercises?.forEach(exercise => {
+            if (exercise.duration_sec) {
+              estimatedDuration += exercise.duration_sec;
+            }
+            if (exercise.rest_sec) {
+              estimatedDuration += exercise.rest_sec;
+            }
+          });
+          if (superset.rest_between_sec) {
+            estimatedDuration += superset.rest_between_sec * (superset.exercises?.length || 0);
+          }
+        });
+      });
+      
+      // Default to 30 minutes if no duration can be calculated
+      if (estimatedDuration === 0) {
+        estimatedDuration = 30 * 60; // 30 minutes in seconds
+      }
+
+      // Create activity on Strava
+      const activity = await createStravaActivity(profileId, {
+        name: workout.title || 'Workout',
+        activity_type: 'Workout',
+        description: description,
+        elapsed_time: estimatedDuration,
+      });
+
+      toast.success('Workout added to Strava!', {
+        description: `Activity "${activity.name}" created successfully`,
+        action: {
+          label: 'View on Strava',
+          onClick: () => window.open(`https://www.strava.com/activities/${activity.id}`, '_blank'),
+        },
+      });
+
+      // Save workout if not already saved
+      if (!savedWorkoutId) {
+        await handleSaveWorkout();
+      }
+
+      // TODO: Update workout history with Strava sync status
+      // This would require updating the workout in the database with strava_activity_id
+      
+    } catch (error: any) {
+      console.error('Failed to add workout to Strava:', error);
+      
+      if (error instanceof StravaTokenExpiredError || error instanceof StravaUnauthorizedError) {
+        const isConnected = await isAccountConnected(profileId, 'strava');
+        if (!isConnected) {
+          toast.error('Please connect your Strava account first via OAuth in Settings');
+        } else {
+          toast.error('Strava connection expired. Please reconnect via OAuth in Settings');
+        }
+      } else {
+        toast.error(`Failed to add workout to Strava: ${error.message || 'Unknown error'}`);
+      }
+    } finally {
+      setIsAddingToStrava(false);
+    }
   };
 
   // Add scheduled date
@@ -341,6 +448,41 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
             >
               <FolderOpen className="w-4 h-4 mr-2" />
               Browse Saved Workouts
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add to Strava - Separate card */}
+      {stravaConnected && workout && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Add to Strava
+            </CardTitle>
+            <CardDescription>
+              Create a manual workout activity on Strava with structured exercise details
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="default"
+              onClick={handleAddToStrava}
+              disabled={isAddingToStrava}
+              className="w-full"
+            >
+              {isAddingToStrava ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Adding to Strava...
+                </>
+              ) : (
+                <>
+                  <Activity className="w-4 h-4 mr-2" />
+                  Add to Strava
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>

@@ -41,6 +41,25 @@ export interface AthleteResponse {
   profile?: string;
 }
 
+export interface CreateActivityRequest {
+  name: string;
+  activity_type?: string;
+  start_date?: string;
+  elapsed_time?: number;
+  description?: string;
+  distance?: number;
+}
+
+export interface CreateActivityResponse {
+  id: number;
+  name: string;
+  type: string;
+  start_date: string;
+  elapsed_time: number;
+  distance: number;
+  description: string;
+}
+
 export class StravaTokenExpiredError extends Error {
   constructor(message: string = 'Strava token expired. Reauthorization required.') {
     super(message);
@@ -179,5 +198,21 @@ export async function checkAndRefreshStravaToken(userId: string): Promise<boolea
     // Return true to allow the calling code to handle the error
     return true;
   }
+}
+
+/**
+ * Create a manual activity on Strava
+ */
+export async function createStravaActivity(
+  userId: string,
+  payload: CreateActivityRequest
+): Promise<CreateActivityResponse> {
+  return stravaApiCall<CreateActivityResponse>(
+    `/strava/activities?userId=${encodeURIComponent(userId)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
 }
 

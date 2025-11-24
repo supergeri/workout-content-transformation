@@ -183,6 +183,86 @@ export function ValidateMap({
     });
   };
 
+  // Apply mapped names from validation to workout structure
+  const applyMappedNamesToWorkout = (workoutToUpdate: WorkoutStructure): WorkoutStructure => {
+    // Create a map of original_name -> mapped_to for all confirmed mappings
+    const nameMapping = new Map<string, string>();
+    // Also store original names for notes (only for Garmin)
+    const originalNames = new Map<string, string>();
+    
+    // Get all confirmed mappings from validated_exercises and needs_review
+    [...localValidation.validated_exercises, ...localValidation.needs_review].forEach(ex => {
+      if (confirmedMappings.has(ex.original_name) && ex.mapped_to && ex.mapped_to !== ex.original_name) {
+        nameMapping.set(ex.original_name, ex.mapped_to);
+        originalNames.set(ex.mapped_to, ex.original_name); // Store reverse mapping for notes
+      }
+    });
+    
+    // If no mappings, return original workout
+    if (nameMapping.size === 0) {
+      return workoutToUpdate;
+    }
+    
+    // Check if we're exporting to Garmin (need to add original names to notes)
+    const isGarmin = selectedDevice === 'garmin';
+    
+    // Deep clone the workout to avoid mutating the original
+    const updatedWorkout: WorkoutStructure = {
+      ...workoutToUpdate,
+      blocks: workoutToUpdate.blocks.map(block => ({
+        ...block,
+        exercises: block.exercises.map(exercise => {
+          const mappedName = nameMapping.get(exercise.name);
+          if (mappedName) {
+            // Update exercise name to mapped name
+            const updatedExercise = { ...exercise, name: mappedName };
+            
+            // For Garmin, add original name to notes
+            if (isGarmin) {
+              const originalName = originalNames.get(mappedName) || exercise.name;
+              // Preserve existing notes, add original name
+              if (updatedExercise.notes) {
+                updatedExercise.notes = `${updatedExercise.notes} (Original: ${originalName})`;
+              } else {
+                updatedExercise.notes = `Original: ${originalName}`;
+              }
+            }
+            
+            return updatedExercise;
+          }
+          return exercise;
+        }),
+        // Also handle supersets if they exist
+        supersets: block.supersets?.map(superset => ({
+          ...superset,
+          exercises: superset.exercises.map(exercise => {
+            const mappedName = nameMapping.get(exercise.name);
+            if (mappedName) {
+              // Update exercise name to mapped name
+              const updatedExercise = { ...exercise, name: mappedName };
+              
+              // For Garmin, add original name to notes
+              if (isGarmin) {
+                const originalName = originalNames.get(mappedName) || exercise.name;
+                // Preserve existing notes, add original name
+                if (updatedExercise.notes) {
+                  updatedExercise.notes = `${updatedExercise.notes} (Original: ${originalName})`;
+                } else {
+                  updatedExercise.notes = `Original: ${originalName}`;
+                }
+              }
+              
+              return updatedExercise;
+            }
+            return exercise;
+          })
+        })) || []
+      }))
+    };
+    
+    return updatedWorkout;
+  };
+
   const handleConfirmAll = () => {
     const allMappedExercises = new Set<string>();
     
@@ -555,7 +635,11 @@ export function ValidateMap({
         </Button>
         <div className="flex flex-col items-end gap-1">
           <Button
-            onClick={() => onProcess(workout)}
+            onClick={() => {
+              // Apply mapped names to workout before processing
+              const workoutWithMappedNames = applyMappedNamesToWorkout(workout);
+              onProcess(workoutWithMappedNames);
+            }}
             disabled={loading || !finalCanExport}
             variant={finalCanExport ? 'default' : 'secondary'}
           >

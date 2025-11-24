@@ -31,8 +31,12 @@ export interface Block {
   label: string;
   structure: WorkoutStructureType | null;
   
-  // Exercises in order (no duplication - exercises appear only once)
+  // Block-level exercises (exercises directly in the block, outside of supersets)
   exercises: Exercise[];
+  
+  // Supersets (nested containers that hold exercises)
+  // A block can have both exercises and supersets simultaneously
+  supersets?: Superset[];
   
   // Structure-specific parameters
   rounds?: number | null;              // For 'rounds' structure: number of rounds
@@ -49,13 +53,13 @@ export interface Block {
   rest_between_sec?: number | null;          // Alias for rest_between_rounds_sec
   default_reps_range?: string | null;        // Deprecated
   default_sets?: number | null;             // Deprecated
-  supersets?: Array<{ exercises: Exercise[]; rest_between_sec: number | null }> | null; // Deprecated
 }
 
-// Legacy Superset interface for backward compatibility
+// Superset interface - containers within blocks that hold exercises
 export interface Superset {
+  id?: string; // Unique ID for drag-and-drop stability
   exercises: Exercise[];
-  rest_between_sec: number | null;
+  rest_between_sec?: number | null; // Rest after completing all exercises in the superset
 }
 
 export interface WorkoutStructure {
