@@ -249,40 +249,22 @@ export async function updateUserProfileFromClerk(clerkUserId: string, updates: P
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.subscription !== undefined) updateData.subscription = updates.subscription;
     if (updates.workoutsThisWeek !== undefined) updateData.workouts_this_week = updates.workoutsThisWeek;
-    // Handle selectedDevices and exportGarminUsb: merge into selected_devices JSON object
-    if (updates.selectedDevices !== undefined || updates.exportGarminUsb !== undefined) {
-      // First, get current selected_devices to preserve existing structure
-      const { data: currentProfile } = await supabase
-        .from('profiles')
-        .select('selected_devices')
-        .eq('id', clerkUserId)
-        .single();
-
-      let currentDevices: DeviceId[] = [];
-      let currentExportGarminUsb = false;
-
-      if (currentProfile?.selected_devices) {
-        if (Array.isArray(currentProfile.selected_devices)) {
-          // Old format: just an array
-          currentDevices = currentProfile.selected_devices as DeviceId[];
-        } else if (typeof currentProfile.selected_devices === 'object') {
-          // New format: object
-          currentDevices = (currentProfile.selected_devices.devices ?? []) as DeviceId[];
-          currentExportGarminUsb = currentProfile.selected_devices.exportGarminUsb ?? false;
-        }
-      }
-
-      // Use new values if provided, otherwise keep current
-      const devices = updates.selectedDevices !== undefined ? updates.selectedDevices : currentDevices;
-      const exportGarminUsb = updates.exportGarminUsb !== undefined ? (updates.exportGarminUsb ?? false) : currentExportGarminUsb;
-
-      // Store as object with both devices array and exportGarminUsb flag
-      updateData.selected_devices = {
-        devices,
-        exportGarminUsb,
-      };
+    // selectedDevices maps directly to selected_devices JSON array
+    if (updates.selectedDevices !== undefined) {
+      updateData.selected_devices = updates.selectedDevices;
     }
-    if (updates.billingDate !== undefined) updateData.billing_date = updates.billingDate.toISOString();
+
+    // For now we do NOT persist exportGarminUsb to Supabase.
+    // We'll add a dedicated column later when the DB is ready.
+
+    // If nothing except updated_at changed, just return
+    if (Object.keys(updateData).length <= 1) {
+      return { data: null, error: null };
+    }
+
+    if (updates.billingDate !== undefined) {
+      updateData.billing_date = updates.billingDate.toISOString();
+    }
 
     const { data, error } = await supabase
       .from('profiles')
@@ -297,4 +279,3 @@ export async function updateUserProfileFromClerk(clerkUserId: string, updates: P
     return { data: null, error };
   }
 }
-
