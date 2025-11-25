@@ -64,25 +64,47 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [pageIndex, setPageIndex] = useState(0); // 0-based page index
+  const [deviceFilter, setDeviceFilter] = useState<'all' | string>('all');
   const PAGE_SIZE = 10;
   
   // Ensure history is an array
   const safeHistory = Array.isArray(history) ? history : [];
   
+  // Derive available devices from history
+  const availableDevices = Array.from(
+    new Set(
+      safeHistory
+        .map((item) => item.device)
+        .filter((d): d is string => Boolean(d))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+  
   // Apply search filter
   const filteredHistory = safeHistory.filter((item) => {
-    if (!searchQuery.trim()) return true;
+    // SEARCH FILTER
+    const hasSearch = searchQuery.trim().length > 0;
+    let matchesSearch = true;
 
-    const q = searchQuery.toLowerCase();
-    const title = item.workout?.title?.toLowerCase?.() ?? '';
-    const device = item.device?.toLowerCase?.() ?? '';
-    const status = item.workout?.status?.toLowerCase?.() ?? '';
+    if (hasSearch) {
+      const q = searchQuery.toLowerCase();
+      const title = item.workout?.title?.toLowerCase?.() ?? '';
+      const deviceName = item.device?.toLowerCase?.() ?? '';
+      const status = item.workout?.status?.toLowerCase?.() ?? '';
 
-    return (
-      title.includes(q) ||
-      device.includes(q) ||
-      status.includes(q)
-    );
+      matchesSearch =
+        title.includes(q) ||
+        deviceName.includes(q) ||
+        status.includes(q);
+    }
+
+    if (!matchesSearch) return false;
+
+    // DEVICE FILTER
+    if (deviceFilter !== 'all') {
+      return item.device === deviceFilter;
+    }
+
+    return true;
   });
 
   // Pagination over filtered list
@@ -409,6 +431,21 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
             placeholder="Search workouts..."
             className="h-8 w-48 rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           />
+          <select
+            value={deviceFilter}
+            onChange={(e) => {
+              setDeviceFilter(e.target.value);
+              setPageIndex(0); // reset to first page when filter changes
+            }}
+            className="h-8 rounded-md border px-2 text-sm bg-background"
+          >
+            <option value="all">All devices</option>
+            {availableDevices.map((device) => (
+              <option key={device} value={device}>
+                {device}
+              </option>
+            ))}
+          </select>
           <input
             type="checkbox"
             checked={isAllSelected}
