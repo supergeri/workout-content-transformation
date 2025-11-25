@@ -60,6 +60,10 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
   const [activeTab, setActiveTab] = useState<'summary' | 'detail'>('summary');
   const [showCardSelector, setShowCardSelector] = useState(false);
   
+  // Modal and undo state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+  
   // Ensure history is an array
   const safeHistory = Array.isArray(history) ? history : [];
   
@@ -95,16 +99,29 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
   const handleBulkDeleteClick = () => {
     if (!onBulkDeleteWorkouts || selectedIds.length === 0) return;
 
-    const confirmed = window.confirm(
-      `Delete ${selectedIds.length} selected workout(s)?`
-    );
-
-    if (!confirmed) return;
-
-    onBulkDeleteWorkouts(selectedIds);
-    clearSelection();
+    setPendingDeleteIds(selectedIds);
+    setShowDeleteModal(true);
   };
-  
+
+  const confirmBulkDelete = () => {
+    if (!onBulkDeleteWorkouts || pendingDeleteIds.length === 0) return;
+
+    // Perform delete via parent handler
+    onBulkDeleteWorkouts(pendingDeleteIds);
+
+    // Clear selection and pending ids
+    clearSelection();
+    setPendingDeleteIds([]);
+
+    // Close modal
+    setShowDeleteModal(false);
+  };
+
+    const cancelBulkDelete = () => {
+    setPendingDeleteIds([]);
+    setShowDeleteModal(false);
+  };
+
   const handleDeleteClick = (id: string) => {
     setConfirmDeleteId(id);
   };
@@ -323,6 +340,27 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
 
   return (
     <div className="space-y-4">
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-xl w-[360px]">
+            <h2 className="text-lg font-semibold mb-3">
+              Delete {pendingDeleteIds.length} workout(s)?
+            </h2>
+            <p className="text-sm text-muted-foreground mb-6">
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={cancelBulkDelete}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmBulkDelete}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl mb-1">Workout History</h2>
