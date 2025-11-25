@@ -4,7 +4,10 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { Play, Clock, List, CheckCircle2, ExternalLink, Plus, Loader2 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Calendar } from './ui/calendar';
+import { Play, Clock, List, CheckCircle2, ExternalLink, Plus, Loader2, CalendarIcon } from 'lucide-react';
+// Using native Date formatting
 import { ingestFollowAlong, listFollowAlong, getFollowAlong, pushToGarmin, pushToAppleWatch } from '../lib/follow-along-api';
 import type { FollowAlongWorkout } from '../types/follow-along';
 import { toast } from 'sonner';
@@ -20,6 +23,9 @@ export function FollowAlongWorkouts() {
   const [selectedWorkout, setSelectedWorkout] = useState<FollowAlongWorkout | null>(null);
   const [showIngestDialog, setShowIngestDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showGarminDatePicker, setShowGarminDatePicker] = useState(false);
+  const [garminSyncDate, setGarminSyncDate] = useState<Date | undefined>(new Date());
+  const [workoutToSync, setWorkoutToSync] = useState<string | null>(null);
 
   const getUserId = (): string => {
     if (!clerkUser?.id) {
@@ -91,22 +97,40 @@ export function FollowAlongWorkouts() {
     }
   };
 
-  const handlePushToGarmin = async (workoutId: string) => {
+  const handlePushToGarmin = async (workoutId: string, scheduleDate?: string) => {
     if (!clerkUser?.id) {
       toast.error('Please sign in to sync workouts');
       return;
     }
 
     try {
-      const result = await pushToGarmin(workoutId, clerkUser.id);
+      // Use current date/time if no date provided
+      const dateToUse = scheduleDate || new Date().toISOString().split('T')[0];
+      const result = await pushToGarmin(workoutId, clerkUser.id, dateToUse);
       if (result.status === 'success') {
-        toast.success('Workout synced to Garmin!');
+        toast.success('Workout synced to Garmin via Unofficial API!');
         loadWorkouts(); // Refresh to update sync status
+        setShowGarminDatePicker(false);
+        setGarminSyncDate(new Date());
+        setWorkoutToSync(null);
       } else {
         toast.error(result.message || 'Failed to sync to Garmin');
       }
     } catch (error: any) {
       toast.error(`Failed to sync to Garmin: ${error.message}`);
+    }
+  };
+
+  const handleGarminSyncClick = (workoutId: string) => {
+    setWorkoutToSync(workoutId);
+    setGarminSyncDate(new Date());
+    setShowGarminDatePicker(true);
+  };
+
+  const handleConfirmGarminSync = () => {
+    if (workoutToSync) {
+      const dateStr = garminSyncDate ? garminSyncDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      handlePushToGarmin(workoutToSync, dateStr);
     }
   };
 
@@ -303,7 +327,8 @@ export function FollowAlongWorkouts() {
                         className="w-full"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handlePushToGarmin(selectedWorkout.id);
+                          if (selectedWorkout.garminWorkoutId) return;
+                          handleGarminSyncClick(selectedWorkout.id);
                         }}
                         disabled={!!selectedWorkout.garminWorkoutId}
                       >
@@ -313,7 +338,7 @@ export function FollowAlongWorkouts() {
                             Synced to Garmin
                           </>
                         ) : (
-                          'Send to Garmin'
+                          'Sync to Garmin (Unofficial API)'
                         )}
                       </Button>
                       <Button
@@ -367,6 +392,57 @@ export function FollowAlongWorkouts() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Garmin Sync Date Picker Dialog */}
+      <Dialog open={showGarminDatePicker} onOpenChange={setShowGarminDatePicker}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule Garmin Sync (Unofficial API)</DialogTitle>
+            <DialogDescription>
+              Choose a date to sync this workout to Garmin using the unofficial API. Leave as today for immediate sync.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left font-normal"
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {garminSyncDate ? garminSyncDate ? garminSyncDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Pick a date' : 'Pick a date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={garminSyncDate}
+                  onSelect={setGarminSyncDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowGarminDatePicker(false);
+                  setWorkoutToSync(null);
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmGarminSync}
+                className="flex-1"
+              >
+                Sync to Garmin (Unofficial API)
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

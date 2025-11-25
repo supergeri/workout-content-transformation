@@ -166,8 +166,64 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
       }
     }
 
+    // Check if Garmin sync is enabled
+    if (platform === 'Garmin' && import.meta.env.VITE_GARMIN_UNOFFICIAL_SYNC_ENABLED !== "true") {
+      toast.error('Garmin Sync (Unofficial API) is disabled', {
+        description: 'Enable GARMIN_UNOFFICIAL_SYNC_ENABLED for personal testing'
+      });
+      return;
+    }
+
+    // For Garmin, use the mapper API endpoint that handles credentials
+    if (platform === 'Garmin' && workout && profileId) {
+      try {
+        toast.info('Syncing to Garmin (Unofficial API)...', {
+          description: 'Importing workout to Garmin Connect'
+        });
+
+        // Use mapper-api endpoint that handles Garmin credentials
+        const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+        
+        // Call the mapper-api endpoint that syncs to Garmin
+        // This endpoint will use the garmin-sync-api with credentials from environment
+        const syncResponse = await fetch(`${MAPPER_API_BASE_URL}/workout/sync/garmin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            blocks_json: workout,
+            workout_title: workout.title || 'Workout',
+            schedule_date: new Date().toISOString().split('T')[0] // Use today's date
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          const error = await syncResponse.json().catch(() => ({ detail: syncResponse.statusText }));
+          throw new Error(error.detail || `Failed to sync: ${syncResponse.statusText}`);
+        }
+
+        const syncResult = await syncResponse.json();
+
+        if (!syncResult.success) {
+          throw new Error(syncResult.message || 'Failed to sync to Garmin');
+        }
+
+        toast.success('Workout synced to Garmin (Unofficial API)!', {
+          description: syncResult.message || 'Your workout has been imported to Garmin Connect'
+        });
+      } catch (error: any) {
+        console.error('Failed to sync to Garmin:', error);
+        toast.error(`Failed to sync to Garmin: ${error.message || 'Unknown error'}`, {
+          description: 'Check console for details'
+        });
+      }
+      return;
+    }
+
+    // For other platforms, show placeholder message
     toast.success(`Syncing to ${platform}...`, {
-      description: 'This would connect to your device in production'
+      description: platform === 'Garmin' 
+        ? 'Using Unofficial API to sync to Garmin Connect'
+        : 'This feature is coming soon'
     });
     
     // TODO: Update export status after successful sync
