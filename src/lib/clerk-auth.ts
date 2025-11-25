@@ -83,13 +83,30 @@ export async function getUserProfileFromClerk(clerkUserId: string): Promise<User
       return null;
     }
 
+    // Handle selected_devices: can be array (old format) or object (new format with exportGarminUsb)
+    let selectedDevices: DeviceId[] = [];
+    let exportGarminUsb = false;
+
+    if (data.selected_devices) {
+      if (Array.isArray(data.selected_devices)) {
+        // Old format: just an array
+        selectedDevices = data.selected_devices as DeviceId[];
+      } else if (typeof data.selected_devices === 'object') {
+        // New format: object with devices array and exportGarminUsb flag
+        selectedDevices = (data.selected_devices.devices ?? []) as DeviceId[];
+        exportGarminUsb = data.selected_devices.exportGarminUsb ?? false;
+      }
+    }
+
     return {
       id: data.id,
       email: data.email,
       name: data.name || data.email.split('@')[0],
       subscription: data.subscription || 'free',
       workoutsThisWeek: data.workouts_this_week || 0,
-      selectedDevices: (data.selected_devices ?? []) as DeviceId[],
+      selectedDevices,
+        exportGarminUsb,
+      exportGarminUsb,
       billingDate: data.billing_date ? new Date(data.billing_date) : undefined,
     };
   } catch (error: any) {
@@ -147,7 +164,32 @@ export async function syncClerkUserToProfile(clerkUser: any): Promise<User | nul
       if (insertError) {
         console.error('Error creating profile via direct insert:', insertError);
         throw insertError;
+      // ---- Normalize selected_devices / exportGarminUsb ----
+      let selectedDevices: DeviceId[] = [];
+      let exportGarminUsb = false;
+
+      if (insertData.selected_devices) {
+        if (Array.isArray(insertData.selected_devices)) {
+          // Old format: just an array of device ids
+          selectedDevices = insertData.selected_devices as DeviceId[];
+        } else if (typeof insertData.selected_devices === 'object') {
+          // New format: { devices: DeviceId[]; exportGarminUsb?: boolean }
+          const raw = insertData.selected_devices as {
+            exportGarminUsb?: boolean;
+          };
+
+          if (Array.isArray(raw.devices)) {
+            selectedDevices = raw.devices;
+          }
+
+          if (typeof raw.exportGarminUsb === 'boolean') {
+            exportGarminUsb = raw.exportGarminUsb;
+          }
+        }
       }
+
+      }
+
 
       return {
         id: insertData.id,
@@ -155,20 +197,35 @@ export async function syncClerkUserToProfile(clerkUser: any): Promise<User | nul
         name: insertData.name || insertData.email.split('@')[0],
         subscription: insertData.subscription || 'free',
         workoutsThisWeek: insertData.workouts_this_week || 0,
-        selectedDevices: (insertData.selected_devices ?? []) as DeviceId[],
+        selectedDevices,
+        exportGarminUsb,
+        exportGarminUsb,
         billingDate: insertData.billing_date ? new Date(insertData.billing_date) : undefined,
       };
     }
 
     // RPC function returns the profile
     if (data) {
+      // Handle selected_devices format
+      let selectedDevices: DeviceId[] = [];
+      let exportGarminUsb = false;
+      if (data.selected_devices) {
+        if (Array.isArray(data.selected_devices)) {
+          selectedDevices = data.selected_devices as DeviceId[];
+        } else if (typeof data.selected_devices === 'object') {
+          selectedDevices = (data.selected_devices.devices ?? []) as DeviceId[];
+          exportGarminUsb = data.selected_devices.exportGarminUsb ?? false;
+        }
+      }
       return {
         id: data.id,
         email: data.email,
         name: data.name || data.email.split('@')[0],
         subscription: data.subscription || 'free',
         workoutsThisWeek: data.workouts_this_week || 0,
-        selectedDevices: (data.selected_devices ?? []) as DeviceId[],
+        selectedDevices,
+        exportGarminUsb,
+      exportGarminUsb,
         billingDate: data.billing_date ? new Date(data.billing_date) : undefined,
       };
     }
@@ -192,7 +249,39 @@ export async function updateUserProfileFromClerk(clerkUserId: string, updates: P
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.subscription !== undefined) updateData.subscription = updates.subscription;
     if (updates.workoutsThisWeek !== undefined) updateData.workouts_this_week = updates.workoutsThisWeek;
-    if (updates.selectedDevices !== undefined) updateData.selected_devices = updates.selectedDevices;
+    // Handle selectedDevices and exportGarminUsb: merge into selected_devices JSON object
+    if (updates.selectedDevices !== undefined || updates.exportGarminUsb !== undefined) {
+      // First, get current selected_devices to preserve existing structure
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('selected_devices')
+        .eq('id', clerkUserId)
+        .single();
+
+      let currentDevices: DeviceId[] = [];
+      let currentExportGarminUsb = false;
+
+      if (currentProfile?.selected_devices) {
+        if (Array.isArray(currentProfile.selected_devices)) {
+          // Old format: just an array
+          currentDevices = currentProfile.selected_devices as DeviceId[];
+        } else if (typeof currentProfile.selected_devices === 'object') {
+          // New format: object
+          currentDevices = (currentProfile.selected_devices.devices ?? []) as DeviceId[];
+          currentExportGarminUsb = currentProfile.selected_devices.exportGarminUsb ?? false;
+        }
+      }
+
+      // Use new values if provided, otherwise keep current
+      const devices = updates.selectedDevices !== undefined ? updates.selectedDevices : currentDevices;
+      const exportGarminUsb = updates.exportGarminUsb !== undefined ? (updates.exportGarminUsb ?? false) : currentExportGarminUsb;
+
+      // Store as object with both devices array and exportGarminUsb flag
+      updateData.selected_devices = {
+        devices,
+        exportGarminUsb,
+      };
+    }
     if (updates.billingDate !== undefined) updateData.billing_date = updates.billingDate.toISOString();
 
     const { data, error } = await supabase

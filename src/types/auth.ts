@@ -9,6 +9,7 @@ export interface User {
   subscription: SubscriptionTier;
   workoutsThisWeek: number;
   selectedDevices: DeviceId[];
+  exportGarminUsb?: boolean; // NEW: Garmin USB FIT export toggle
   billingDate?: Date;
 }
 
