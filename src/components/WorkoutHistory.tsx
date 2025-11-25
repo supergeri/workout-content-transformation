@@ -36,6 +36,7 @@ type Props = {
   onEditWorkout?: (item: WorkoutHistoryItem) => void;
   onUpdateWorkout?: (item: WorkoutHistoryItem) => Promise<void>;
   onDeleteWorkout: (id: string) => void;
+  onBulkDeleteWorkouts?: (ids: string[]) => Promise<void> | void;
   onEnhanceStrava?: (item: WorkoutHistoryItem) => void;
 };
 
@@ -48,20 +49,131 @@ type ViewCard = {
   category: string;
 };
 
-export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdateWorkout, onDeleteWorkout, onEnhanceStrava }: Props) {
+export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdateWorkout, onDeleteWorkout, onBulkDeleteWorkouts, onEnhanceStrava }: Props) {
   const stravaConnected = isAccountConnectedSync('strava');
   const [viewingWorkout, setViewingWorkout] = useState<WorkoutHistoryItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('compact');
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'summary' | 'detail'>('summary');
   const [showCardSelector, setShowCardSelector] = useState(false);
+  
+  // Modal and undo state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [pageIndex, setPageIndex] = useState(0); // 0-based page index
+  const [deviceFilter, setDeviceFilter] = useState<'all' | string>('all');
+  const PAGE_SIZE = 10;
   
   // Ensure history is an array
   const safeHistory = Array.isArray(history) ? history : [];
   
+  // Derive available devices from history
+  const availableDevices = Array.from(
+    new Set(
+      safeHistory
+        .map((item) => item.device)
+        .filter((d): d is string => Boolean(d))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+  
+  // Apply search filter
+  const filteredHistory = safeHistory.filter((item) => {
+    // SEARCH FILTER
+    const hasSearch = searchQuery.trim().length > 0;
+    let matchesSearch = true;
+
+    if (hasSearch) {
+      const q = searchQuery.toLowerCase();
+      const title = item.workout?.title?.toLowerCase?.() ?? '';
+      const deviceName = item.device?.toLowerCase?.() ?? '';
+      const status = item.workout?.status?.toLowerCase?.() ?? '';
+
+      matchesSearch =
+        title.includes(q) ||
+        deviceName.includes(q) ||
+        status.includes(q);
+    }
+
+    if (!matchesSearch) return false;
+
+    // DEVICE FILTER
+    if (deviceFilter !== 'all') {
+      return item.device === deviceFilter;
+    }
+
+    return true;
+  });
+
+  // Pagination over filtered list
+  const totalPages = Math.max(1, Math.ceil(filteredHistory.length / PAGE_SIZE));
+  const currentPageIndex = Math.min(pageIndex, totalPages - 1);
+  const pageStart = currentPageIndex * PAGE_SIZE;
+  const displayedHistory = filteredHistory.slice(pageStart, pageStart + PAGE_SIZE);
+  
+  // Selection state for bulk delete
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const isAllSelected =
+    displayedHistory.length > 0 &&
+    displayedHistory.every((item) => selectedIds.includes(item.id || ''));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      // Unselect only items on the current page
+      setSelectedIds((prev) =>
+        prev.filter((id) => !displayedHistory.some((item) => item.id === id))
+      );
+    } else {
+      // Select all items on the current page, keeping previous selections
+      const idsOnPage = displayedHistory
+        .map((item) => item.id)
+        .filter((id): id is string => Boolean(id));
+
+      setSelectedIds((prev) =>
+        Array.from(new Set([...prev, ...idsOnPage]))
+      );
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleBulkDeleteClick = () => {
+    if (!onBulkDeleteWorkouts || selectedIds.length === 0) return;
+
+    setPendingDeleteIds(selectedIds);
+    setShowDeleteModal(true);
+  };
+
+  const confirmBulkDelete = () => {
+    if (!onBulkDeleteWorkouts || pendingDeleteIds.length === 0) return;
+
+    // Perform delete via parent handler
+    onBulkDeleteWorkouts(pendingDeleteIds);
+
+    // Clear selection and pending ids
+    clearSelection();
+    setPendingDeleteIds([]);
+
+    // Close modal
+    setShowDeleteModal(false);
+  };
+
+    const cancelBulkDelete = () => {
+    setPendingDeleteIds([]);
+    setShowDeleteModal(false);
+  };
+
   const handleDeleteClick = (id: string) => {
     setConfirmDeleteId(id);
   };
@@ -280,14 +392,77 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
 
   return (
     <div className="space-y-4">
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-xl w-[360px]">
+            <h2 className="text-lg font-semibold mb-3">
+              Delete {pendingDeleteIds.length} workout(s)?
+            </h2>
+            <p className="text-sm text-muted-foreground mb-6">
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={cancelBulkDelete}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmBulkDelete}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl mb-1">Workout History</h2>
           <p className="text-sm text-muted-foreground">
-            {safeHistory.length} workout{safeHistory.length !== 1 ? 's' : ''} saved
+            {filteredHistory.length} workout{filteredHistory.length !== 1 ? 's' : ''} saved
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPageIndex(0); // reset to first page when searching
+            }}
+            placeholder="Search workouts..."
+            className="h-8 w-48 rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          />
+          <select
+            value={deviceFilter}
+            onChange={(e) => {
+              setDeviceFilter(e.target.value);
+              setPageIndex(0); // reset to first page when filter changes
+            }}
+            className="h-8 rounded-md border px-2 text-sm bg-background"
+          >
+            <option value="all">All devices</option>
+            {availableDevices.map((device) => (
+              <option key={device} value={device}>
+                {device}
+              </option>
+            ))}
+          </select>
+          <input
+            type="checkbox"
+            checked={isAllSelected}
+            onChange={toggleSelectAll}
+            aria-label="Select all workouts"
+            className="w-4 h-4"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={selectedIds.length === 0}
+            onClick={handleBulkDeleteClick}
+            className="gap-2"
+          >
+            Delete selected ({selectedIds.length})
+          </Button>
           <Button
             variant={viewMode === 'cards' ? 'default' : 'outline'}
             size="sm"
@@ -311,7 +486,7 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
 
       <ScrollArea className="h-[calc(100vh-200px)]">
         <div className={viewMode === 'cards' ? 'space-y-2 pr-4 max-w-7xl mx-auto' : 'space-y-1 pr-4 max-w-7xl mx-auto'}>
-          {safeHistory.map((item) => {
+          {displayedHistory.map((item) => {
             // Safety check: ensure workout exists
             if (!item.workout) {
               console.warn('WorkoutHistory item missing workout data:', item);
@@ -343,8 +518,17 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
               return (
                 <div
                   key={item.id}
-                  className="flex items-center gap-4 p-3 border rounded-lg hover:bg-muted/50 transition-colors group"
+                  className={`flex items-center gap-4 p-3 border rounded-lg hover:bg-muted/50 transition-colors group ${
+                    selectedIds.includes(item.id || '') ? 'bg-muted/40 border-primary/40' : ''
+                  }`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id || '')}
+                    onChange={() => toggleSelect(item.id || '')}
+                    aria-label="Select workout"
+                    className="w-4 h-4 flex-shrink-0"
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3">
                       <h3 className="font-semibold truncate">{item.workout?.title || 'Untitled Workout'}</h3>
@@ -430,9 +614,18 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
 
             // Card view - improved readability
             return (
-              <Card key={item.id} className="hover:shadow-md transition-all border-border/50 bg-card">
+              <Card key={item.id} className={`hover:shadow-md transition-all border-border/50 bg-card ${
+                selectedIds.includes(item.id || '') ? 'bg-muted/40 border-primary/40 shadow-sm' : ''
+              }`}>
                 <CardHeader className="pb-3 px-4 pt-4">
                   <div className="flex items-start justify-between gap-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(item.id || '')}
+                      onChange={() => toggleSelect(item.id || '')}
+                      aria-label="Select workout"
+                      className="w-4 h-4 flex-shrink-0 mt-1"
+                    />
                     <div className="flex-1 min-w-0 space-y-2">
                       <CardTitle className="text-lg font-bold truncate text-foreground">
                         {item.workout?.title || 'Untitled Workout'}
@@ -534,6 +727,48 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
           })}
         </div>
       </ScrollArea>
+
+      {/* Pagination Controls */}
+      <div className="flex items-center justify-between px-4 py-3 text-sm text-muted-foreground">
+        <div>
+          Showing{' '}
+          {filteredHistory.length === 0
+            ? 0
+            : pageStart + 1}{' '}
+          –{' '}
+          {Math.min(pageStart + PAGE_SIZE, filteredHistory.length)}{' '}
+          of{' '}
+          {filteredHistory.length}{' '}
+          workout{filteredHistory.length === 1 ? '' : 's'}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentPageIndex === 0}
+            onClick={() => setPageIndex((prev) => Math.max(0, prev - 1))}
+          >
+            Previous
+          </Button>
+          <span>
+            Page {currentPageIndex + 1} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentPageIndex >= totalPages - 1}
+            onClick={() =>
+              setPageIndex((prev) =>
+                Math.min(totalPages - 1, prev + 1)
+              )
+            }
+          >
+            Next
+          </Button>
+        </div>
+      </div>
 
       {/* Card Selector Modal - Similar to Google Analytics */}
       <Dialog open={showCardSelector && !!viewingWorkout} onOpenChange={(open) => {
