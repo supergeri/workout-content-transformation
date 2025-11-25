@@ -208,6 +208,12 @@ export function AddSources({ onGenerate, onLoadTemplate, onCreateNew, loading, p
     let content: string;
     if (activeTab === 'image') {
       if (currentInput.trim()) {
+        // Check if it's a YouTube URL
+        if (/youtube\.com|youtu\.be/i.test(currentInput.trim())) {
+          // YouTube URL detected - switch to YouTube tab
+          setActiveTab('youtube');
+          return;
+        }
         // Use URL for image
         content = currentInput.trim();
         setCurrentInput('');
@@ -222,6 +228,15 @@ export function AddSources({ onGenerate, onLoadTemplate, onCreateNew, loading, p
     } else {
       // For other types, use currentInput or filename
       content = uploadedImage ? uploadedImage.name : currentInput;
+      
+      // Auto-detect YouTube URLs and switch to YouTube tab if needed
+      if (content && /youtube\.com|youtu\.be/i.test(content) && activeTab !== 'youtube') {
+        // YouTube URL detected but wrong tab - switch to YouTube tab
+        setActiveTab('youtube');
+        // Don't add source yet, let user confirm or re-add
+        return;
+      }
+      
       setCurrentInput('');
       setUploadedImage(null);
       setImagePreview(null);
