@@ -159,20 +159,20 @@ export async function getFollowAlong(id: string, userId: string): Promise<GetFol
  * Push follow-along workout to Garmin
  * Uses mapper-api endpoint
  */
-export async function pushToGarmin(id: string, userId: string): Promise<PushToGarminResponse> {
+export async function pushToGarmin(id: string, userId: string, scheduleDate?: string): Promise<PushToGarminResponse> {
   // Guard: Check if unofficial Garmin sync is enabled
   if (import.meta.env.VITE_GARMIN_UNOFFICIAL_SYNC_ENABLED !== "true") {
-    console.warn("Garmin Sync disabled — awaiting official Garmin approval.");
+    console.warn("Garmin Sync disabled — feature flag not enabled.");
     return {
       status: "error",
-      message: "Garmin Sync is disabled — awaiting official Garmin approval.",
+      message: "Garmin Sync (Unofficial API) is currently disabled. Enable GARMIN_UNOFFICIAL_SYNC_ENABLED for personal testing.",
     };
   }
   
   const response = await fetch(`${MAPPER_API_BASE_URL}/follow-along/${id}/push/garmin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId, scheduleDate: scheduleDate || null }),
   });
 
   if (!response.ok) {
