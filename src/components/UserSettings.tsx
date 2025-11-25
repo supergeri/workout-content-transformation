@@ -50,6 +50,8 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [selectedDevices, setSelectedDevices] = useState<DeviceId[]>(user.selectedDevices);
+    // Derive Garmin USB state from selectedDevices
+  const exportGarminUsb = selectedDevices.includes('garmin_usb');
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(false);
   const [autoSync, setAutoSync] = useState(true);
@@ -78,38 +80,39 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
     }
   }, [clerkUser]);
 
+  useEffect(() => {
+    setSelectedDevices(user.selectedDevices);
+  }, [user]);
+
+
   const handleSave = async () => {
-    try {
-      // Save image processing preference
-      setImageProcessingMethod(imageProcessingMethod);
-      
-      // Save selected devices if they changed
-      if (clerkUser?.id) {
-        const devicesChanged = JSON.stringify(selectedDevices.sort()) !== JSON.stringify([...user.selectedDevices].sort());
-        
-        if (devicesChanged) {
-          const { error } = await updateUserProfileFromClerk(clerkUser.id, {
-            selectedDevices: selectedDevices,
-          });
-          
-          if (error) {
-            throw error;
-          }
-          
-          // Update parent component with new devices
-          onUserUpdate?.({ selectedDevices });
-          toast.success('Settings and devices saved successfully');
-        } else {
-          toast.success('Settings saved successfully');
-        }
-      } else {
-        toast.success('Settings saved successfully');
-      }
-    } catch (error: any) {
-      console.error('Error saving settings:', error);
-      toast.error(error?.message || 'Failed to save settings. Please try again.');
+  try {
+    // Save image processing preference
+    setImageProcessingMethod(imageProcessingMethod);
+
+    if (!clerkUser?.id) return;
+
+    const devicesChanged =
+      JSON.stringify([...selectedDevices].sort()) !==
+      JSON.stringify([...user.selectedDevices].sort());
+
+    if (!devicesChanged) {
+      toast.success('Settings saved successfully');
+      return;
     }
-  };
+
+    await updateUserProfileFromClerk(clerkUser.id, {
+      selectedDevices,
+    });
+
+    onUserUpdate?.({ selectedDevices });
+
+    toast.success('Settings and devices saved successfully');
+  } catch (error: any) {
+    console.error('Error saving settings:', error);
+    toast.error(error?.message || 'Failed to save settings. Please try again.');
+  }
+};
 
   const handleImageProcessingMethodChange = (method: ImageProcessingMethod) => {
     setImageProcessingMethodState(method);
@@ -667,6 +670,30 @@ Block: Warm-Up
                       <Switch
                         checked={selectedDevices.includes('garmin')}
                         onCheckedChange={() => toggleDevice('garmin')}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">Garmin (USB FIT Export)</span>
+                        <span className="text-xs text-muted-foreground">
+                          Export FIT files for manual USB transfer to your Garmin watch
+                        </span>
+                      </div>
+                      <Switch
+                        checked={exportGarminUsb}
+                        onCheckedChange={(val) => {
+                          setSelectedDevices((prev) => {
+                            const hasUsb = prev.includes('garmin_usb');
+                            if (val && !hasUsb) {
+                              return [...prev, 'garmin_usb'];
+                            }
+                            if (!val && hasUsb) {
+                              return prev.filter((d) => d !== 'garmin_usb');
+                            }
+                            return prev;
+                          });
+                        }}
                       />
                     </div>
 
