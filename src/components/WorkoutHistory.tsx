@@ -403,7 +403,9 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
               return (
                 <div
                   key={item.id}
-                  className="flex items-center gap-4 p-3 border rounded-lg hover:bg-muted/50 transition-colors group"
+                  className={`flex items-center gap-4 p-3 border rounded-lg hover:bg-muted/50 transition-colors group ${
+                    selectedIds.includes(item.id || '') ? 'bg-muted/40 border-primary/40' : ''
+                  }`}
                 >
                   <input
                     type="checkbox"
@@ -497,7 +499,9 @@ export function WorkoutHistory({ history, onLoadWorkout, onEditWorkout, onUpdate
 
             // Card view - improved readability
             return (
-              <Card key={item.id} className="hover:shadow-md transition-all border-border/50 bg-card">
+              <Card key={item.id} className={`hover:shadow-md transition-all border-border/50 bg-card ${
+                selectedIds.includes(item.id || '') ? 'bg-muted/40 border-primary/40 shadow-sm' : ''
+              }`}>
                 <CardHeader className="pb-3 px-4 pt-4">
                   <div className="flex items-start justify-between gap-4">
                     <input
