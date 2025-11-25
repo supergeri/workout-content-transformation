@@ -14,6 +14,21 @@ export function BuildBadge() {
   // Hide in production
   if (import.meta.env.PROD) return null;
 
+  // Debug logging
+  if (import.meta.env.DEV) {
+    console.log('BuildBadge - buildInfo:', buildInfo);
+  }
+
+  if (!buildInfo) {
+    console.warn('BuildBadge - buildInfo is null');
+    return null;
+  }
+
+  if (!buildInfo.version) {
+    console.warn('BuildBadge - version is missing:', buildInfo);
+    return null;
+  }
+
   let builtAtLocal = buildInfo.builtAt;
   try {
     builtAtLocal = new Date(buildInfo.builtAt).toLocaleString();

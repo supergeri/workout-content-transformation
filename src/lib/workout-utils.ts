@@ -20,25 +20,51 @@ export function addIdsToWorkout(workout: WorkoutStructure): WorkoutStructure {
     };
   }
   
+  // Industry-standard: ensure all exercises and supersets have required IDs
   return {
     ...workout,
     blocks: workout.blocks.map(block => ({
       ...block,
       id: block.id || generateId(),
-      exercises: (block.exercises || []).map(exercise => ({
+      exercises: (block.exercises || []).filter(ex => ex != null).map(exercise => ({
         ...exercise,
-        id: exercise.id || generateId(),
+        id: exercise.id || generateId(), // Required field
       })),
       supersets: (block.supersets || []).map(superset => ({
         ...superset,
-        id: superset.id || generateId(),
-        exercises: (superset.exercises || []).map(exercise => ({
+        id: superset.id || generateId(), // Required field
+        exercises: (superset.exercises || []).filter(ex => ex != null).map(exercise => ({
           ...exercise,
-          id: exercise.id || generateId(),
+          id: exercise.id || generateId(), // Required field
         })),
       })),
     })),
   };
+}
+
+/**
+ * Create an empty workout structure for manual creation
+ */
+export function createEmptyWorkout(): WorkoutStructure {
+  return addIdsToWorkout({
+    title: "New Workout",
+    source: "manual",
+    blocks: [
+      {
+        label: "Workout",
+        structure: null,
+        exercises: [],
+        supersets: [],
+        rounds: null,
+        sets: null,
+        time_cap_sec: null,
+        time_work_sec: null,
+        time_rest_sec: null,
+        rest_between_rounds_sec: null,
+        rest_between_sets_sec: null
+      }
+    ]
+  });
 }
 
 /**

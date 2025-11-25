@@ -8,11 +8,45 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Watch, Bike, Wand2, ShieldCheck, Edit2, Check, X, Trash2, GripVertical, Plus, Layers, Move, ChevronDown, ChevronUp, Minimize2, Maximize2, Save, Code } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { WorkoutStructure, Exercise, Block } from '../types/workout';
+import { WorkoutStructure, Exercise, Block, Superset } from '../types/workout';
 import { DeviceId, getDevicesByIds, getDeviceById } from '../lib/devices';
 import { ExerciseSearch } from './ExerciseSearch';
 import { Badge } from './ui/badge';
 import { addIdsToWorkout, generateId, getStructureDisplayName } from '../lib/workout-utils';
+import { EditExerciseDialog } from './EditExerciseDialog';
+
+// ============================================================================
+// Immutable helpers for Workout cloning (Industry-standard: avoid JSON.parse(JSON.stringify))
+// ============================================================================
+function cloneExercise(ex: Exercise): Exercise {
+  return { ...ex };
+}
+
+function cloneSuperset(s: Superset): Superset {
+  return {
+    ...s,
+    exercises: (s.exercises || []).map(cloneExercise),
+  };
+}
+
+function cloneBlock(b: Block): Block {
+  return {
+    ...b,
+    exercises: (b.exercises || []).map(cloneExercise),
+    supersets: b.supersets ? b.supersets.map(cloneSuperset) : undefined,
+  };
+}
+
+function cloneWorkout(w: WorkoutStructure): WorkoutStructure {
+  return {
+    ...w,
+    blocks: (w.blocks || []).map(cloneBlock),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 type Props = {
   workout: WorkoutStructure;
@@ -21,6 +55,7 @@ type Props = {
   onValidate: () => void;
   onSave?: () => void | Promise<void>;
   isEditingFromHistory?: boolean;
+  isCreatingFromScratch?: boolean;
   loading: boolean;
   selectedDevice: DeviceId;
   onDeviceChange: (device: DeviceId) => void;
@@ -71,42 +106,28 @@ function DraggableExercise({
   }));
 
   const getDisplayName = () => {
-    // Show count in the name for easier scanning, but only if not already included
-    const name = exercise.name || '';
-    
-    // Check if name already starts with the rep count/distance/duration
-    if (exercise.reps) {
-      const repsStr = String(exercise.reps);
-      // Check if name already starts with the rep count (with or without space)
-      if (name.startsWith(repsStr + ' ') || name.startsWith(repsStr + '\t')) {
-        return name; // Already includes rep count
-      }
-      return `${repsStr} ${name}`;
-    } else if (exercise.distance_m) {
-      const distanceStr = `${exercise.distance_m}m`;
-      // Check if name already starts with the distance (case-insensitive)
-      if (name.toLowerCase().startsWith(distanceStr.toLowerCase() + ' ') || 
-          name.toLowerCase().startsWith(distanceStr.toLowerCase() + '\t')) {
-        return name; // Already includes distance
-      }
-      return `${distanceStr} ${name}`;
-    } else if (exercise.duration_sec) {
-      const durationStr = `${exercise.duration_sec}s`;
-      // Check if name already starts with the duration
-      if (name.startsWith(durationStr + ' ') || name.startsWith(durationStr + '\t')) {
-        return name; // Already includes duration
-      }
-      return `${durationStr} ${name}`;
-    }
-    return name;
+    // Just return the exercise name - don't prepend duration/distance
+    // Duration/distance will be shown separately in badges
+    return exercise.name || '';
   };
 
   const getDisplayText = () => {
     const parts: string[] = [];
     if (exercise.sets) parts.push(`${exercise.sets} sets`);
+    if (exercise.reps) parts.push(`${exercise.reps} reps`);
     if (exercise.reps_range) parts.push(`${exercise.reps_range} reps`);
-    if (exercise.rest_sec) parts.push(`Rest: ${exercise.rest_sec}s`);
+    if (exercise.duration_sec) {
+      const minutes = Math.floor(exercise.duration_sec / 60);
+      const seconds = exercise.duration_sec % 60;
+      if (minutes > 0) {
+        parts.push(seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`);
+      } else {
+        parts.push(`${seconds}s`);
+      }
+    }
+    if (exercise.distance_m) parts.push(`${exercise.distance_m}m`);
     if (exercise.distance_range) parts.push(`${exercise.distance_range}`);
+    if (exercise.rest_sec) parts.push(`Rest: ${exercise.rest_sec}s`);
     return parts.length > 0 ? parts.join(' • ') : null;
   };
 
@@ -142,6 +163,8 @@ function DraggableExercise({
 }
 
 // Droppable Exercise Container (Block-level exercises or Superset exercises)
+// Industry-standard: ExerciseDropZone focuses on UI + drop intent, not business logic like sorting
+// Array order in state is the single source of truth
 function ExerciseDropZone({
   blockIdx,
   exercises,
@@ -159,16 +182,22 @@ function ExerciseDropZone({
   label?: string;
   supersetIdx?: number;
 }) {
-  const [{ isOver }, drop] = useDrop(() => ({
-    accept: ItemTypes.EXERCISE,
-    drop: (item: DraggableExerciseData) => {
-      // Pass supersetIdx if this is a superset drop zone
-      onDrop(item, exercises.length, supersetIdx);
-    },
-    collect: (monitor) => ({
-      isOver: monitor.isOver(),
+  const [{ isOver }, drop] = useDrop(
+    () => ({
+      accept: ItemTypes.EXERCISE,
+      drop: (item: DraggableExerciseData) => {
+        // For now, this drop zone appends to the end of its container.
+        // More advanced patterns (above/below/into) should be handled
+        // with additional sub-zones or hover position logic.
+        const targetIdx = exercises.length;
+        onDrop(item, targetIdx, supersetIdx);
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver(),
+      }),
     }),
-  }));
+    [exercises.length, supersetIdx, onDrop]
+  );
 
   return (
     <div
@@ -190,7 +219,7 @@ function ExerciseDropZone({
       )}
       {exercises.map((exercise, idx) => (
         <DraggableExercise
-          key={exercise.id || idx}
+          key={exercise.id}
           exercise={exercise}
           blockIdx={blockIdx}
           exerciseIdx={idx}
@@ -257,6 +286,13 @@ function DraggableBlock({
   const [editingLabel, setEditingLabel] = useState(false);
   const [tempLabel, setTempLabel] = useState(block.label);
   const [isCollapsed, setIsCollapsed] = useState(true);
+
+  // Sync tempLabel when block.label changes (but not when editing)
+  useEffect(() => {
+    if (!editingLabel) {
+      setTempLabel(block.label);
+    }
+  }, [block.label, editingLabel]);
 
   // React to collapse/expand all signal
   useEffect(() => {
@@ -383,18 +419,39 @@ function DraggableBlock({
           </CardHeader>
           {!isCollapsed && (
             <CardContent className="space-y-4">
-              {/* Block-level exercises */}
-              {(block.exercises || []).length > 0 && (
+              {/* Exercises at index 0 (before supersets) - show if supersets exist */}
+              {(block.supersets || []).length > 0 && (block.exercises || []).length > 0 && (
                 <div>
-                <ExerciseDropZone
-                  blockIdx={blockIdx}
-                  exercises={block.exercises || []}
-                  onDrop={(item, targetIdx) => onExerciseDrop(item, targetIdx)}
-                  onEdit={(idx) => onEditExercise(idx)}
-                  onDelete={(idx) => onDeleteExercise(idx)}
-                  label="Exercises"
-                  supersetIdx={undefined}
-                />
+                  <ExerciseDropZone
+                    blockIdx={blockIdx}
+                    exercises={(block.exercises || []).slice(0, 1)} // Only show first exercise if it exists
+                    onDrop={(item, targetIdx) => {
+                      // Drop at index 0 to place above supersets
+                      onExerciseDrop(item, 0);
+                    }}
+                    onEdit={(idx) => onEditExercise(0)}
+                    onDelete={(idx) => onDeleteExercise(0)}
+                    label={(block.exercises || []).length > 0 ? "Exercises" : undefined}
+                    supersetIdx={undefined}
+                  />
+                </div>
+              )}
+
+              {/* Drop zone before supersets - allows dragging exercises above supersets (empty zone) */}
+              {(block.supersets || []).length > 0 && (block.exercises || []).length === 0 && (
+                <div>
+                  <ExerciseDropZone
+                    blockIdx={blockIdx}
+                    exercises={[]}
+                    onDrop={(item) => {
+                      // Drop at index 0 to place above supersets
+                      onExerciseDrop(item, 0);
+                    }}
+                    onEdit={() => {}}
+                    onDelete={() => {}}
+                    label={undefined}
+                    supersetIdx={undefined}
+                  />
                 </div>
               )}
 
@@ -439,6 +496,7 @@ function DraggableBlock({
                           onDeleteExercise(idx, supersetIdx);
                         }}
                         label={`Superset ${supersetIdx + 1} Exercises`}
+                        supersetIdx={supersetIdx}
                       />
                       <Button
                         variant="outline"
@@ -453,6 +511,66 @@ function DraggableBlock({
                   ))}
                 </div>
               )}
+
+              {/* Block-level exercises - show AFTER supersets (index 1+). We preserve the
+                  array order; no extra sorting in the UI. */}
+              <div>
+                <ExerciseDropZone
+                  blockIdx={blockIdx}
+                  exercises={(block.exercises || [])
+                    .slice((block.supersets || []).length > 0 ? 1 : 0)
+                    .filter(ex => ex != null)}
+                  onDrop={(item) => {
+                    // When dropping below supersets, append to the end of all block-level exercises
+                    // This ensures it goes after supersets in the UI
+                    const finalTargetIdx = (block.exercises || []).length;
+                    onExerciseDrop(item, finalTargetIdx);
+                  }}
+                  onEdit={(idx) => {
+                    const baseIdx = (block.supersets || []).length > 0 ? 1 : 0;
+                    // Map filtered index back to original array index
+                    const filteredSlice = (block.exercises || []).slice(baseIdx).filter(ex => ex != null);
+                    const originalSlice = (block.exercises || []).slice(baseIdx);
+                    // Find the original index by counting non-null exercises up to idx
+                    let count = 0;
+                    let actualIdx = baseIdx;
+                    for (let i = 0; i < originalSlice.length; i++) {
+                      if (originalSlice[i] != null) {
+                        if (count === idx) {
+                          actualIdx = baseIdx + i;
+                          break;
+                        }
+                        count++;
+                      }
+                    }
+                    onEditExercise(actualIdx);
+                  }}
+                  onDelete={(idx) => {
+                    const baseIdx = (block.supersets || []).length > 0 ? 1 : 0;
+                    // Map filtered index back to original array index
+                    const originalSlice = (block.exercises || []).slice(baseIdx);
+                    let count = 0;
+                    let actualIdx = baseIdx;
+                    for (let i = 0; i < originalSlice.length; i++) {
+                      if (originalSlice[i] != null) {
+                        if (count === idx) {
+                          actualIdx = baseIdx + i;
+                          break;
+                        }
+                        count++;
+                      }
+                    }
+                    onDeleteExercise(actualIdx);
+                  }}
+                  label={
+                    (block.exercises || []).filter(ex => ex != null).length >
+                    ((block.supersets || []).length > 0 ? 1 : 0)
+                      ? 'Exercises'
+                      : undefined
+                  }
+                  supersetIdx={undefined}
+                />
+              </div>
 
               {/* Action buttons */}
               <div className="flex gap-2 pt-2 border-t">
@@ -490,6 +608,7 @@ export function StructureWorkout({
   onValidate,
   onSave,
   isEditingFromHistory = false,
+  isCreatingFromScratch = false,
   loading,
   selectedDevice,
   onDeviceChange,
@@ -524,11 +643,29 @@ export function StructureWorkout({
     workout?.blocks?.length || 0,
     workout?.title || '',
     workout?.source || '',
+    // Include block labels to detect changes
+    workout?.blocks?.map(b => b?.label || '').join('|') || '',
     // Stringify block IDs to detect actual changes (with null checks)
     workout?.blocks?.map(b => b?.id || '').join(',') || '',
     workout?.blocks?.map(b => b?.exercises?.map(e => e?.id || '').join(',') || '').join('|') || '',
     workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.id || '').join(',') || '').join('|') || '',
-    workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.exercises?.map(e => e?.id || '').join(',') || '').join('|') || '').join('||') || ''
+    workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.exercises?.map(e => e?.id || '').join(',') || '').join('|') || '').join('||') || '',
+    // Include exercise names to detect when new exercises are added
+    workout?.blocks?.map(b => b?.exercises?.map(e => e?.name || '').join(',') || '').join('|') || '',
+    workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.exercises?.map(e => e?.name || '').join(',') || '').join('|') || '').join('||') || '',
+    // Include exercise properties to detect changes to distance, duration, reps, etc.
+    workout?.blocks?.map(b => 
+      b?.exercises?.map(e => 
+        `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.notes || ''}`
+      ).join('||') || ''
+    ).join('|||') || '',
+    workout?.blocks?.map(b => 
+      b?.supersets?.map(ss => 
+        ss?.exercises?.map(e => 
+          `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.notes || ''}`
+        ).join('||') || ''
+      ).join('|||') || ''
+    ).join('||||') || ''
   ]);
 
   const [editingTitle, setEditingTitle] = useState(false);
@@ -558,7 +695,7 @@ export function StructureWorkout({
   const handleBlockDrop = (draggedIdx: number, targetIdx: number) => {
     if (draggedIdx === targetIdx) return;
     
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
+    const newWorkout = cloneWorkout(workoutWithIds);
     const [draggedBlock] = newWorkout.blocks.splice(draggedIdx, 1);
     
     // Adjust target index if dragging down
@@ -568,74 +705,177 @@ export function StructureWorkout({
     onWorkoutChange(newWorkout);
   };
 
-  // Handle exercise drag and drop
+  // Industry-standard: Use indices from DraggableExerciseData instead of re-searching arrays by id/name
+  // Perform immutable updates via clone helpers
+  // Correctly adjust target index when moving within the same container
   const handleExerciseDrop = (
     item: DraggableExerciseData,
     targetBlockIdx: number,
-    targetExerciseIdx: number,
+    rawTargetExerciseIdx: number,
     targetSupersetIdx?: number
   ) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
-    
-    // Get exercise from source (block-level or superset)
-    let draggedExercise: Exercise;
-    if (item.supersetIdx !== undefined) {
-      // Remove from source superset
-      draggedExercise = newWorkout.blocks[item.blockIdx].supersets[item.supersetIdx].exercises.splice(item.exerciseIdx, 1)[0];
-    } else {
-      // Remove from source block-level exercises
-      if (!newWorkout.blocks[item.blockIdx].exercises) {
-        newWorkout.blocks[item.blockIdx].exercises = [];
-      }
-      draggedExercise = newWorkout.blocks[item.blockIdx].exercises.splice(item.exerciseIdx, 1)[0];
+    const currentWorkout: WorkoutStructure | undefined = workout || workoutWithIds;
+    if (!currentWorkout) return;
+
+    const newWorkout = cloneWorkout(currentWorkout);
+
+    const sourceBlockIdx = item.blockIdx;
+    const sourceSupersetIdx = item.supersetIdx;
+    const sourceExerciseIdx = item.exerciseIdx;
+
+    const sourceBlock = newWorkout.blocks[sourceBlockIdx];
+    const targetBlock = newWorkout.blocks[targetBlockIdx];
+
+    if (!sourceBlock || !targetBlock) {
+      console.warn('handleExerciseDrop: invalid block index', {
+        sourceBlockIdx,
+        targetBlockIdx,
+      });
+      return;
     }
-    
-    // Add to target (block-level or superset)
-    if (targetSupersetIdx !== undefined) {
-      // Add to target superset
-      if (!newWorkout.blocks[targetBlockIdx].supersets) {
-        newWorkout.blocks[targetBlockIdx].supersets = [];
+
+    let movedExercise: Exercise | undefined;
+
+    // 1) Remove from source
+    if (sourceSupersetIdx !== undefined && sourceSupersetIdx !== null) {
+      const sourceSuperset = sourceBlock.supersets?.[sourceSupersetIdx];
+      if (!sourceSuperset || !sourceSuperset.exercises) {
+        console.warn('handleExerciseDrop: invalid source superset', {
+          sourceSupersetIdx,
+        });
+        return;
       }
-      if (!newWorkout.blocks[targetBlockIdx].supersets[targetSupersetIdx]) {
-        newWorkout.blocks[targetBlockIdx].supersets[targetSupersetIdx] = {
+      movedExercise = sourceSuperset.exercises[sourceExerciseIdx];
+      if (!movedExercise) {
+        console.warn('handleExerciseDrop: no exercise at source index', {
+          sourceExerciseIdx,
+        });
+        return;
+      }
+      sourceSuperset.exercises.splice(sourceExerciseIdx, 1);
+    } else {
+      if (!sourceBlock.exercises) {
+        console.warn('handleExerciseDrop: source block has no exercises');
+        return;
+      }
+      movedExercise = sourceBlock.exercises[sourceExerciseIdx];
+      if (!movedExercise) {
+        console.warn('handleExerciseDrop: no exercise at source index', {
+          sourceExerciseIdx,
+        });
+        return;
+      }
+      sourceBlock.exercises.splice(sourceExerciseIdx, 1);
+    }
+
+    // Safety check
+    if (!movedExercise) {
+      console.warn('handleExerciseDrop: movedExercise is undefined after removal');
+      return;
+    }
+
+    // 2) Insert into target
+    if (targetSupersetIdx !== undefined && targetSupersetIdx !== null) {
+      // Ensure superset exists
+      if (!targetBlock.supersets) {
+        targetBlock.supersets = [];
+      }
+      if (!targetBlock.supersets[targetSupersetIdx]) {
+        targetBlock.supersets[targetSupersetIdx] = {
           id: generateId(),
           exercises: [],
           rest_between_sec: 60,
         };
       }
-      if (!newWorkout.blocks[targetBlockIdx].supersets[targetSupersetIdx].exercises) {
-        newWorkout.blocks[targetBlockIdx].supersets[targetSupersetIdx].exercises = [];
+      const targetSuperset = targetBlock.supersets[targetSupersetIdx];
+      if (!targetSuperset.exercises) {
+        targetSuperset.exercises = [];
       }
-      newWorkout.blocks[targetBlockIdx].supersets[targetSupersetIdx].exercises.splice(targetExerciseIdx, 0, draggedExercise);
+
+      let targetExerciseIdx = rawTargetExerciseIdx;
+
+      // Adjust for moving within the same superset container
+      const movingWithinSameSuperset =
+        sourceBlockIdx === targetBlockIdx &&
+        sourceSupersetIdx !== undefined &&
+        sourceSupersetIdx === targetSupersetIdx;
+
+      if (movingWithinSameSuperset && sourceExerciseIdx < rawTargetExerciseIdx) {
+        targetExerciseIdx = rawTargetExerciseIdx - 1;
+      }
+
+      targetExerciseIdx = clamp(targetExerciseIdx, 0, targetSuperset.exercises.length);
+      targetSuperset.exercises.splice(targetExerciseIdx, 0, movedExercise);
     } else {
-      // Add to target block-level exercises
-      if (!newWorkout.blocks[targetBlockIdx].exercises) {
-        newWorkout.blocks[targetBlockIdx].exercises = [];
+      if (!targetBlock.exercises) {
+        targetBlock.exercises = [];
       }
-      newWorkout.blocks[targetBlockIdx].exercises.splice(targetExerciseIdx, 0, draggedExercise);
+
+      let targetExerciseIdx = rawTargetExerciseIdx;
+
+      // Adjust for moving within the same block-level exercises container
+      const movingWithinSameBlockExercises =
+        sourceBlockIdx === targetBlockIdx && (sourceSupersetIdx === undefined || sourceSupersetIdx === null);
+
+      if (movingWithinSameBlockExercises && sourceExerciseIdx < rawTargetExerciseIdx) {
+        targetExerciseIdx = rawTargetExerciseIdx - 1;
+      }
+
+      targetExerciseIdx = clamp(targetExerciseIdx, 0, targetBlock.exercises.length);
+      targetBlock.exercises.splice(targetExerciseIdx, 0, movedExercise);
+    }
+
+    onWorkoutChange(newWorkout);
+  };
+
+  const updateExercise = (blockIdx: number, exerciseIdx: number, updates: Partial<Exercise>, supersetIdx?: number) => {
+    const newWorkout = cloneWorkout(workoutWithIds);
+    
+    if (supersetIdx !== undefined) {
+      // Update exercise in superset
+      const exercise = newWorkout.blocks[blockIdx].supersets?.[supersetIdx]?.exercises?.[exerciseIdx];
+      if (exercise) {
+        newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises[exerciseIdx] = { ...exercise, ...updates };
+      }
+    } else {
+      // Update exercise in block
+      const exercise = newWorkout.blocks[blockIdx].exercises[exerciseIdx];
+      if (exercise) {
+        newWorkout.blocks[blockIdx].exercises[exerciseIdx] = { ...exercise, ...updates };
+      }
+    }
+    
+    onWorkoutChange(newWorkout);
+    // Note: Don't close dialog here - let EditExerciseDialog manage its own state
+  };
+
+  const deleteExercise = (blockIdx: number, exerciseIdx: number, supersetIdx?: number) => {
+    const newWorkout = cloneWorkout(workoutWithIds);
+    
+    if (supersetIdx !== undefined) {
+      // Delete exercise from superset
+      if (newWorkout.blocks[blockIdx].supersets?.[supersetIdx]?.exercises) {
+        newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises.splice(exerciseIdx, 1);
+      }
+    } else {
+      // Delete exercise from block
+      if (newWorkout.blocks[blockIdx].exercises) {
+        newWorkout.blocks[blockIdx].exercises.splice(exerciseIdx, 1);
+      }
     }
     
     onWorkoutChange(newWorkout);
   };
 
-  const updateExercise = (blockIdx: number, exerciseIdx: number, updates: Partial<Exercise>) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
-    const exercise = newWorkout.blocks[blockIdx].exercises[exerciseIdx];
-    newWorkout.blocks[blockIdx].exercises[exerciseIdx] = { ...exercise, ...updates };
-    onWorkoutChange(newWorkout);
-    setEditingExercise(null);
-  };
-
-  const deleteExercise = (blockIdx: number, exerciseIdx: number) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
-    if (newWorkout.blocks[blockIdx].exercises) {
-      newWorkout.blocks[blockIdx].exercises.splice(exerciseIdx, 1);
-    }
-    onWorkoutChange(newWorkout);
-  };
-
+  // Industry-standard: Use cloneWorkout for immutability
+  // Ensure new exercises always have an id and (optionally) addedAt for any upstream sorting
+  // Let the array order define what the UI shows; don't override it inside the drop zone
   const addExercise = (blockIdx: number, exerciseName: string, supersetIdx?: number) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
+    const baseWorkout: WorkoutStructure | undefined = workoutWithIds || workout;
+    if (!baseWorkout) return;
+
+    const newWorkout = cloneWorkout(baseWorkout);
+
     const newExercise: Exercise = {
       id: generateId(),
       name: exerciseName,
@@ -647,33 +887,53 @@ export function StructureWorkout({
       distance_m: null,
       distance_range: null,
       type: 'strength',
-      notes: null
+      notes: null,
+      addedAt: Date.now(), // optional metadata; actual order is defined by array position
     };
-    
-    if (supersetIdx !== undefined) {
-      // Add to superset
-      if (!newWorkout.blocks[blockIdx].supersets) {
-        newWorkout.blocks[blockIdx].supersets = [];
+
+    const block = newWorkout.blocks[blockIdx];
+    if (!block) {
+      console.warn('addExercise: invalid blockIdx', { blockIdx });
+      return;
+    }
+
+    if (supersetIdx !== undefined && supersetIdx !== null) {
+      if (!block.supersets) {
+        block.supersets = [];
       }
-      if (!newWorkout.blocks[blockIdx].supersets[supersetIdx]) {
-        newWorkout.blocks[blockIdx].supersets[supersetIdx] = {
+      if (!block.supersets[supersetIdx]) {
+        block.supersets[supersetIdx] = {
           id: generateId(),
           exercises: [],
           rest_between_sec: 60,
         };
       }
-      if (!newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises) {
-        newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises = [];
+      if (!block.supersets[supersetIdx].exercises) {
+        block.supersets[supersetIdx].exercises = [];
       }
-      newWorkout.blocks[blockIdx].supersets[supersetIdx].exercises.push(newExercise);
+      block.supersets[supersetIdx].exercises.push(newExercise);
     } else {
-      // Add to block-level exercises
-      if (!newWorkout.blocks[blockIdx].exercises) {
-        newWorkout.blocks[blockIdx].exercises = [];
+      if (!block.exercises) {
+        block.exercises = [];
       }
-      newWorkout.blocks[blockIdx].exercises.push(newExercise);
+      // When adding to block-level exercises:
+      // - If there are supersets, we want the exercise to go AFTER supersets
+      //   - Index 0 is shown before supersets (if it exists)
+      //   - Index 1+ are shown after supersets
+      //   - So if this is the first exercise with supersets, insert at index 1
+      //   - Otherwise, append to end (will be at index 1+)
+      // - If no supersets, append normally
+      const hasSupersets = (block.supersets || []).length > 0;
+      if (hasSupersets && block.exercises.length === 0) {
+        // First exercise with supersets - insert at index 1 (after supersets)
+        // This creates a sparse array, but that's okay - index 0 will be undefined
+        block.exercises[1] = newExercise;
+      } else {
+        // Not the first exercise, or no supersets - append normally
+        block.exercises.push(newExercise);
+      }
     }
-    
+
     onWorkoutChange(newWorkout);
     setShowExerciseSearch(false);
     setAddingToBlock(null);
@@ -681,11 +941,11 @@ export function StructureWorkout({
   };
 
   const addSuperset = (blockIdx: number) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
+    const newWorkout = cloneWorkout(workoutWithIds);
     if (!newWorkout.blocks[blockIdx].supersets) {
       newWorkout.blocks[blockIdx].supersets = [];
     }
-    const newSuperset = {
+    const newSuperset: Superset = {
       id: generateId(),
       exercises: [],
       rest_between_sec: 60,
@@ -695,7 +955,7 @@ export function StructureWorkout({
   };
 
   const deleteSuperset = (blockIdx: number, supersetIdx: number) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
+    const newWorkout = cloneWorkout(workoutWithIds);
     if (newWorkout.blocks[blockIdx].supersets) {
       newWorkout.blocks[blockIdx].supersets.splice(supersetIdx, 1);
     }
@@ -703,7 +963,7 @@ export function StructureWorkout({
   };
 
   const addBlock = () => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
+    const newWorkout = cloneWorkout(workoutWithIds);
     const newBlock: Block = {
       id: generateId(),
       label: `Block ${(workoutWithIds.blocks || []).length + 1}`,
@@ -715,7 +975,7 @@ export function StructureWorkout({
   };
 
   const updateBlock = (blockIdx: number, updates: Partial<Block>) => {
-    const newWorkout = JSON.parse(JSON.stringify(workoutWithIds));
+    const newWorkout = cloneWorkout(workoutWithIds);
     newWorkout.blocks[blockIdx] = { ...newWorkout.blocks[blockIdx], ...updates };
     onWorkoutChange(newWorkout);
   };
@@ -774,22 +1034,26 @@ export function StructureWorkout({
             </div>
 
             <div className="flex gap-2 flex-wrap">
-              {isEditingFromHistory ? (
+              {(isEditingFromHistory || isCreatingFromScratch) ? (
                 <>
                   {onSave && (
                     <Button onClick={onSave} disabled={loading} className="gap-2">
                       <Save className="w-4 h-4" />
-                      Save Changes
+                      {isCreatingFromScratch ? 'Save Workout' : 'Save Changes'}
                     </Button>
                   )}
-                  <Button onClick={onAutoMap} disabled={loading} variant="outline" className="gap-2">
-                    <Wand2 className="w-4 h-4" />
-                    Re-Auto-Map & Export
-                  </Button>
-                  <Button onClick={onValidate} disabled={loading} variant="outline" className="gap-2">
-                    <ShieldCheck className="w-4 h-4" />
-                    Re-Validate & Review
-                  </Button>
+                  {isEditingFromHistory && (
+                    <>
+                      <Button onClick={onAutoMap} disabled={loading} variant="outline" className="gap-2">
+                        <Wand2 className="w-4 h-4" />
+                        Re-Auto-Map & Export
+                      </Button>
+                      <Button onClick={onValidate} disabled={loading} variant="outline" className="gap-2">
+                        <ShieldCheck className="w-4 h-4" />
+                        Re-Validate & Review
+                      </Button>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -883,128 +1147,48 @@ export function StructureWorkout({
         {/* Exercise Search Modal */}
         {showExerciseSearch && addingToBlock !== null && (
           <ExerciseSearch
-            onSelect={(exerciseName) => addExercise(addingToBlock, exerciseName)}
+            onSelect={(exerciseName) => {
+              const supersetIdx = addingToSuperset?.supersetIdx;
+              addExercise(addingToBlock, exerciseName, supersetIdx);
+            }}
             onClose={() => {
               setShowExerciseSearch(false);
               setAddingToBlock(null);
+              setAddingToSuperset(null);
             }}
             device={selectedDevice}
           />
         )}
 
         {/* Edit Exercise Dialog */}
-        <Dialog open={!!editingExercise} onOpenChange={(open) => !open && setEditingExercise(null)}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Edit Exercise</DialogTitle>
-              <DialogDescription>
-                Update the exercise details below
-              </DialogDescription>
-            </DialogHeader>
-            {editingExercise && (() => {
-              const { blockIdx, exerciseIdx, supersetIdx } = editingExercise;
-              const exercise = supersetIdx !== undefined
-                ? workoutWithIds.blocks[blockIdx].supersets?.[supersetIdx]?.exercises?.[exerciseIdx]
-                : workoutWithIds.blocks[blockIdx].exercises[exerciseIdx];
-              
-              if (!exercise) {
+        {editingExercise && (() => {
+          const { blockIdx, exerciseIdx, supersetIdx } = editingExercise;
+          // Always read from current workout state to ensure updates are reflected
+          const currentExercise = supersetIdx !== undefined
+            ? workoutWithIds.blocks[blockIdx]?.supersets?.[supersetIdx]?.exercises?.[exerciseIdx]
+            : workoutWithIds.blocks[blockIdx]?.exercises[exerciseIdx];
+          
+          if (!currentExercise) {
+            // Exercise was deleted, close dialog
+            setEditingExercise(null);
+            return null;
+          }
+          
+          return (
+            <EditExerciseDialog
+              key={`${blockIdx}-${exerciseIdx}-${supersetIdx ?? 'block'}`}
+              open={!!editingExercise}
+              exercise={currentExercise}
+              onSave={(updates) => {
+                // Live updates: onSave is called on every change, don't close dialog here
+                updateExercise(blockIdx, exerciseIdx, updates, supersetIdx);
+              }}
+              onClose={() => {
                 setEditingExercise(null);
-                return null;
-              }
-              
-              return (
-                <div className="space-y-4">
-                  <div>
-                    <Label>Exercise Name</Label>
-                    <Input
-                      value={exercise.name}
-                      onChange={(e) => updateExercise(blockIdx, exerciseIdx, { name: e.target.value }, supersetIdx)}
-                      placeholder="Exercise name"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Sets</Label>
-                      <Input
-                        type="number"
-                        value={exercise.sets || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { sets: parseInt(e.target.value) || null })}
-                        placeholder="Sets"
-                      />
-                    </div>
-                    <div>
-                      <Label>Reps</Label>
-                      <Input
-                        type="number"
-                        value={exercise.reps || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { reps: parseInt(e.target.value) || null })}
-                        placeholder="Reps"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Reps Range</Label>
-                      <Input
-                        value={exercise.reps_range || ''}
-                        placeholder="e.g., 10-12"
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { reps_range: e.target.value || null })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Rest (sec)</Label>
-                      <Input
-                        type="number"
-                        value={exercise.rest_sec || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { rest_sec: parseInt(e.target.value) || null })}
-                        placeholder="Rest"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Duration (sec)</Label>
-                      <Input
-                        type="number"
-                        value={exercise.duration_sec || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { duration_sec: parseInt(e.target.value) || null })}
-                        placeholder="Duration"
-                      />
-                    </div>
-                    <div>
-                      <Label>Distance (m)</Label>
-                      <Input
-                        type="number"
-                        value={exercise.distance_m || ''}
-                        onChange={(e) => updateExercise(blockIdx, exerciseIdx, { distance_m: parseInt(e.target.value) || null })}
-                        placeholder="Distance"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Distance Range</Label>
-                    <Input
-                      value={exercise.distance_range || ''}
-                      placeholder="e.g., 100-200m"
-                      onChange={(e) => updateExercise(blockIdx, exerciseIdx, { distance_range: e.target.value || null })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Notes</Label>
-                    <Input
-                      value={exercise.notes || ''}
-                      placeholder="Optional notes"
-                      onChange={(e) => updateExercise(blockIdx, exerciseIdx, { notes: e.target.value || null })}
-                    />
-                  </div>
-                  <Button onClick={() => setEditingExercise(null)} className="w-full">
-                    Done
-                  </Button>
-                </div>
-              );
-            })()}
-          </DialogContent>
-        </Dialog>
+              }}
+            />
+          );
+        })()}
 
         {/* Debug JSON Dialog */}
         {showDebugJson && (

@@ -17,6 +17,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 interface AddSourcesProps {
   onGenerate: (sources: Source[]) => void;
   onLoadTemplate: (workout: WorkoutStructure) => void;
+  onCreateNew?: () => void;
   loading: boolean;
   progress?: string | null;
   onCancel?: () => void;
@@ -180,7 +181,7 @@ Always follow the exact format above. No exceptions.`;
   );
 }
 
-export function AddSources({ onGenerate, onLoadTemplate, loading, progress, onCancel }: AddSourcesProps) {
+export function AddSources({ onGenerate, onLoadTemplate, onCreateNew, loading, progress, onCancel }: AddSourcesProps) {
   const [sources, setSources] = useState<Source[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [activeTab, setActiveTab] = useState<SourceType>('image');
@@ -634,7 +635,29 @@ export function AddSources({ onGenerate, onLoadTemplate, loading, progress, onCa
       </div>
 
       {/* Right sidebar - Templates & History */}
-      <div className="lg:col-span-1">
+      <div className="lg:col-span-1 space-y-4">
+        {/* Create New Workout Button */}
+        {onCreateNew && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Create New Workout</CardTitle>
+              <CardDescription>
+                Start with a blank workout and build it manually
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={onCreateNew}
+                className="w-full"
+                variant="default"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create New Workout
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        
         <WorkoutTemplates
           onSelectTemplate={onLoadTemplate}
           onSelectHistory={onLoadTemplate}
