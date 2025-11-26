@@ -57,6 +57,7 @@ export type PushToGarminResponse = {
   status: "success" | "error";
   garminWorkoutId?: string;
   message?: string;
+  alreadySynced?: boolean;
 };
 
 export type PushToAppleWatchResponse = {

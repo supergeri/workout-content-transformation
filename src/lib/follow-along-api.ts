@@ -185,6 +185,14 @@ export async function pushToGarmin(id: string, userId: string, scheduleDate?: st
 
   const result = await response.json();
   
+  if (result.status === "already_synced") {
+    return {
+      alreadySynced: true,
+      status: "already_synced",
+      garminWorkoutId: result.garminWorkoutId,
+    };
+  }
+  
   if (!result.success) {
     return {
       status: "error",
