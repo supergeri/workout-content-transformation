@@ -26,6 +26,7 @@ export function FollowAlongWorkouts() {
   const [showGarminDatePicker, setShowGarminDatePicker] = useState(false);
   const [garminSyncDate, setGarminSyncDate] = useState<Date | undefined>(new Date());
   const [workoutToSync, setWorkoutToSync] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const getUserId = (): string => {
     if (!clerkUser?.id) {
@@ -98,13 +99,39 @@ export function FollowAlongWorkouts() {
   };
 
   const handlePushToGarmin = async (workoutId: string, scheduleDate?: string) => {
+    if (isSyncing) return;
     if (!clerkUser?.id) {
       toast.error('Please sign in to sync workouts');
       return;
     }
 
+    setIsSyncing(true);
     try {
       // Use current date/time if no date provided
+      const dateToUse = scheduleDate || new Date().toISOString().split('T')[0];
+      const result = await pushToGarmin(workoutId, clerkUser.id, dateToUse);
+      if (result?.alreadySynced) {
+        toast.info('Already synced to Garmin.');
+        loadWorkouts(); // Refresh to update sync status
+        setShowGarminDatePicker(false);
+        setGarminSyncDate(new Date());
+        setWorkoutToSync(null);
+      } else if (result.status === 'success') {
+        toast.success('Workout synced to Garmin via Unofficial API!');
+        loadWorkouts(); // Refresh to update sync status
+        setShowGarminDatePicker(false);
+        setGarminSyncDate(new Date());
+        setWorkoutToSync(null);
+      } else {
+        toast.error(result.message || 'Failed to sync to Garmin');
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Failed to sync to Garmin: ${error.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
       const dateToUse = scheduleDate || new Date().toISOString().split('T')[0];
       const result = await pushToGarmin(workoutId, clerkUser.id, dateToUse);
       if (result.status === 'success') {
@@ -438,8 +465,8 @@ export function FollowAlongWorkouts() {
               <Button
                 onClick={handleConfirmGarminSync}
                 className="flex-1"
-              >
-                Sync to Garmin (Unofficial API)
+               disabled={isSyncing}>
+                {isSyncing ? "Syncing…" : "Sync to Garmin (Unofficial API)"}
               </Button>
             </div>
           </div>
