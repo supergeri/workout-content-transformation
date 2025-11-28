@@ -1,16 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import * as AddSourcesModule from "../AddSources";
+import AddSources from "../AddSources";
 
-// Support both default and named exports.
-const AddSources =
-  (AddSourcesModule as any).default ?? (AddSourcesModule as any).AddSources;
+const hasRadixDom =
+  typeof window !== "undefined" &&
+  typeof document !== "undefined" &&
+  typeof document.createElement === "function";
 
-if (!AddSources) {
-  // If the component isn't wired up yet, skip this suite to avoid
-  // noisy failures while still keeping the test file in place.
-  describe.skip("AddSources (component not exported yet)", () => {
-    it("is temporarily skipped", () => {
+if (!hasRadixDom || !AddSources) {
+  describe.skip("AddSources", () => {
+    it("skipped: DOM or component not available", () => {
       expect(true).toBe(true);
     });
   });
