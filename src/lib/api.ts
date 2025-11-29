@@ -12,7 +12,6 @@ const API_TIMEOUT = 120000;
  * This function is exported for use when loading workouts from history
  */
 export function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStructure {
-  // Ensure workout has blocks
   if (!workout.blocks || workout.blocks.length === 0) {
     return {
       ...workout,
@@ -27,40 +26,33 @@ export function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStr
       ],
     };
   }
-  
+
   const normalizedBlocks = workout.blocks.map((block: Block, index: number) => {
-    // Ensure block has a label
     const blockLabel = block.label || block.structure || `Block ${index + 1}`;
-    
-    // Convert old format (supersets) to new format (exercises with structure)
+
     let exercises: Exercise[] = block.exercises || [];
     let structure = block.structure;
     let restBetweenRoundsSec = block.rest_between_rounds_sec || block.rest_between_sec;
-    
-    // If block has supersets (old format), convert to new format
+
     if (block.supersets && block.supersets.length > 0) {
-      // Flatten supersets into exercises array
       exercises = [];
       block.supersets.forEach((superset) => {
         exercises.push(...superset.exercises);
       });
-      
-      // If not already set, determine structure based on exercise count
+
       if (!structure) {
         if (exercises.length === 2) {
-          structure = 'superset'; // 2 exercises = superset
+          structure = 'superset';
         } else if (exercises.length > 2) {
-          structure = 'circuit'; // Multiple exercises = circuit
+          structure = 'circuit';
         }
       }
-      
-      // Use rest from first superset if available
+
       if (block.supersets[0]?.rest_between_sec && !restBetweenRoundsSec) {
         restBetweenRoundsSec = block.supersets[0].rest_between_sec;
       }
     }
-    
-    // Build normalized block
+
     const normalizedBlock: Block = {
       label: blockLabel,
       structure: structure || null,
@@ -73,20 +65,152 @@ export function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStr
       rounds: block.rounds || null,
       sets: block.sets || null,
     };
-    
-    // Legacy fields for backward compatibility
+
     if (block.rest_between_sec !== undefined) {
       normalizedBlock.rest_between_sec = block.rest_between_sec;
     }
-    
+
     return normalizedBlock;
   });
-  
+
   return {
     ...workout,
     blocks: normalizedBlocks,
     title: workout.title || 'Imported Workout',
     source: workout.source || 'unknown',
+  };
+}
+
+/**
+ * Small post-processing pass for YouTube workouts:
+ * - Only keep lines that look like real exercise names
+ * - Drop obvious narration / promo lines ("did for rep one...", "$29.99", etc.)
+ */
+function sanitizeYoutubeWorkout(workout: WorkoutStructure): WorkoutStructure {
+  if (!workout || !workout.blocks || workout.blocks.length === 0) {
+    return workout;
+  }
+
+  const provenance: any = (workout as any)._provenance || {};
+  const sourceUrl = (workout.source || provenance.source_url || '') as string;
+
+  const isYoutube =
+    sourceUrl.includes('youtube.com') ||
+    sourceUrl.includes('youtu.be') ||
+    !!provenance.youtube_strategy;
+
+  if (!isYoutube) {
+    return workout;
+  }
+
+  const EXERCISE_KEYWORDS = [
+    'squat',
+    'lunge',
+    'press',
+    'bench',
+    'push-up',
+    'pushup',
+    'pull-up',
+    'pullup',
+    'row',
+    'deadlift',
+    'curl',
+    'extension',
+    'raise',
+    'fly',
+    'plank',
+    'crunch',
+    'situp',
+    'sit-up',
+    'burpee',
+    'kettlebell',
+    'dumbbell',
+    'barbell',
+    'hip thrust',
+    'step up',
+    'wall ball',
+    'sled',
+    'carry',
+    'pulldown',
+    'pull-down',
+    'lat',
+    'triceps',
+    'biceps',
+    'chest',
+    'back',
+    'shoulder',
+    'deltoid',
+    'core',
+  ];
+
+  const BANNED_SNIPPETS = [
+    '$',
+    'discount',
+    'subscribe',
+    'like and',
+    'comment below',
+    'link in the description',
+    'as you can get it for',
+  ];
+
+  function looksLikeExerciseName(name: string | null | undefined): boolean {
+    if (!name) return false;
+    const trimmed = name.trim();
+    if (trimmed.length < 5 || trimmed.length > 100) return false;
+
+    const lower = trimmed.toLowerCase();
+
+    if (BANNED_SNIPPETS.some((s) => lower.includes(s))) {
+      return false;
+    }
+
+    const hasExerciseWord = EXERCISE_KEYWORDS.some((kw) => lower.includes(kw));
+    if (!hasExerciseWord) {
+      return false;
+    }
+
+    // Kill very chatty / sentence-like lines that clearly aren't labels
+    if (lower.startsWith('did for rep one')) return false;
+    if (lower.startsWith('by the time they get')) return false;
+
+    return true;
+  }
+
+  const cleanedBlocks: Block[] = workout.blocks
+    .map((block) => {
+      const originalExercises = block.exercises || [];
+      const cleanedExercises = originalExercises.filter((ex) =>
+        looksLikeExerciseName(ex.name),
+      );
+
+      if (cleanedExercises.length === 0) {
+        return null;
+      }
+
+      let structure = block.structure || null;
+      if (!structure) {
+        if (cleanedExercises.length === 2) {
+          structure = 'superset';
+        } else if (cleanedExercises.length > 2) {
+          structure = 'circuit';
+        }
+      }
+
+      return {
+        ...block,
+        structure,
+        exercises: cleanedExercises,
+      } as Block;
+    })
+    .filter((b): b is Block => !!b);
+
+  if (!cleanedBlocks.length) {
+    return workout;
+  }
+
+  return {
+    ...workout,
+    blocks: cleanedBlocks,
   };
 }
 
@@ -97,60 +221,49 @@ export function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStr
 async function apiCall<T>(
   endpoint: string,
   options: RequestInit = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
-  // Don't set Content-Type for FormData (browser will set it with boundary)
-  // Preserve existing headers (e.g., 'text/plain' for AI text)
+
   const headers: Record<string, string> = {};
-  
-  // Copy existing headers if provided
+
   if (options.headers) {
     if (options.headers instanceof Headers) {
       options.headers.forEach((value, key) => {
         headers[key] = value;
       });
     } else if (Array.isArray(options.headers)) {
-      // Array of [key, value] pairs
       options.headers.forEach(([key, value]) => {
         headers[key] = value;
       });
     } else {
-      // Plain object
       Object.assign(headers, options.headers);
     }
   }
-  
-  // Only set default Content-Type if not already specified and not FormData
+
   if (!(options.body instanceof FormData)) {
     const hasContentType = Object.keys(headers).some(
-      k => k.toLowerCase() === 'content-type'
+      (k) => k.toLowerCase() === 'content-type',
     );
-    
+
     if (!hasContentType) {
       headers['Content-Type'] = 'application/json';
     }
   }
-  
-  // Create an AbortController for timeout
+
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), API_TIMEOUT);
-  
-  // Combine signals: if both are provided, create a combined signal
+
   let finalSignal: AbortSignal;
   if (signal) {
-    // If user signal aborts, abort timeout controller too
     signal.addEventListener('abort', () => {
       timeoutController.abort();
     });
-    // Use user signal as primary
     finalSignal = signal;
   } else {
-    // Use timeout signal only
     finalSignal = timeoutController.signal;
   }
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -160,17 +273,17 @@ async function apiCall<T>(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = await response.json().catch(() => ({
+        detail: response.statusText,
+      }));
       throw new Error(error.detail || `API error: ${response.status} ${response.statusText}`);
     }
 
-    // Parse JSON response
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       return response.json();
     }
-    
-    // If response is not JSON, try to parse as text and then JSON
+
     const text = await response.text();
     try {
       return JSON.parse(text);
@@ -180,11 +293,14 @@ async function apiCall<T>(
   } catch (error: any) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError' || error.name === 'AbortSignal') {
-      // Check if it was user cancellation or timeout
       if (signal?.aborted) {
         throw new Error('Generation cancelled');
       }
-      throw new Error(`Request timeout: Structure generation took longer than ${API_TIMEOUT / 1000} seconds. The image may be complex or the server is slow. Please try again.`);
+      throw new Error(
+        `Request timeout: Structure generation took longer than ${
+          API_TIMEOUT / 1000
+        } seconds. The image may be complex or the server is slow. Please try again.`,
+      );
     }
     throw error;
   }
@@ -195,40 +311,22 @@ async function apiCall<T>(
  */
 export async function generateWorkoutStructure(
   sources: Array<{ type: SourceType; content: string }>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<WorkoutStructure> {
   let workout: WorkoutStructure | undefined;
 
   for (const source of sources) {
     if (source.type === 'youtube') {
-      const resp = await apiCall<any>(
+      const resp = await apiCall<WorkoutStructure>(
         '/ingest/youtube',
         {
           method: 'POST',
           body: JSON.stringify({ url: source.content }),
         },
-        signal
+        signal,
       );
 
-      // If backend ever returns a full workout, use it
-      if (resp && resp.blocks) {
-        workout = resp as WorkoutStructure;
-      } else {
-        // Current API just returns summary (title, youtube_strategy, blocks_count)
-        // Build a minimal placeholder workout so the rest of the UI still works
-        workout = {
-          title: resp?.title || 'YouTube Workout',
-          source: source.content,
-          blocks: [
-            {
-              label: 'Workout',
-              structure: null,
-              exercises: [],
-            } as Block,
-          ],
-        } as WorkoutStructure;
-      }
-
+      workout = sanitizeYoutubeWorkout(resp);
       break;
     }
 
@@ -243,7 +341,6 @@ export async function generateWorkoutStructure(
 
         const formData = new FormData();
         let fileName = 'image.jpg';
-
         if (source.content.startsWith('blob:')) {
           const mimeType = imageBlob.type;
           const extension = mimeType.split('/')[1] || 'jpg';
@@ -263,7 +360,6 @@ export async function generateWorkoutStructure(
             fileName = `${fileName}.${extension}`;
           }
         }
-
         formData.append('file', imageBlob, fileName);
 
         const { getImageProcessingMethod } = await import('./preferences');
@@ -284,7 +380,7 @@ export async function generateWorkoutStructure(
             body: formData,
             headers: {},
           },
-          signal
+          signal,
         );
 
         (workout as any)._usedVisionAPI = usedVisionAPI;
@@ -319,9 +415,9 @@ export async function generateWorkoutStructure(
                 'Content-Type': 'application/json',
               },
             },
-            signal
+            signal,
           );
-        } catch {
+        } catch (e) {
           workout = await apiCall<WorkoutStructure>(
             '/ingest/ai_workout',
             {
@@ -331,7 +427,7 @@ export async function generateWorkoutStructure(
                 'Content-Type': 'text/plain',
               },
             },
-            signal
+            signal,
           );
         }
       } else {
@@ -344,10 +440,9 @@ export async function generateWorkoutStructure(
               'Content-Type': 'text/plain',
             },
           },
-          signal
+          signal,
         );
       }
-
       break;
     }
   }
@@ -361,7 +456,7 @@ export async function generateWorkoutStructure(
 
 // Cache for health check to avoid repeated calls
 let healthCheckCache: { result: boolean; timestamp: number } | null = null;
-const HEALTH_CHECK_CACHE_DURATION = 5000; // Cache for 5 seconds
+const HEALTH_CHECK_CACHE_DURATION = 5000;
 
 /**
  * Create an empty workout structure via API
@@ -371,11 +466,9 @@ export async function createEmptyWorkout(): Promise<WorkoutStructure> {
     const workout = await apiCall<WorkoutStructure>('/workouts/create-empty', {
       method: 'POST',
     });
-    
-    // Normalize the workout structure to ensure it's compatible with StructureWorkout component
+
     return normalizeWorkoutStructure(workout);
   } catch (error: any) {
-    // Fallback to local creation if API fails
     console.warn('Failed to create empty workout via API, using local fallback:', error);
     const { createEmptyWorkout: createEmptyWorkoutLocal } = await import('./workout-utils');
     return createEmptyWorkoutLocal();
@@ -386,30 +479,26 @@ export async function createEmptyWorkout(): Promise<WorkoutStructure> {
  * Check if the API is available
  */
 export async function checkApiHealth(): Promise<boolean> {
-  // Return cached result if still valid
   if (healthCheckCache && Date.now() - healthCheckCache.timestamp < HEALTH_CHECK_CACHE_DURATION) {
     return healthCheckCache.result;
   }
-  
+
   try {
-    // Add timeout to health check
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-    
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
     const response = await fetch(`${API_BASE_URL}/health`, {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-    
+
     const isHealthy = response.ok;
-    // Cache the result
     healthCheckCache = {
       result: isHealthy,
       timestamp: Date.now(),
     };
     return isHealthy;
   } catch (error) {
-    // Cache negative result to avoid repeated failures
     healthCheckCache = {
       result: false,
       timestamp: Date.now(),
@@ -417,4 +506,3 @@ export async function checkApiHealth(): Promise<boolean> {
     return false;
   }
 }
-
