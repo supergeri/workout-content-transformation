@@ -197,63 +197,78 @@ export async function generateWorkoutStructure(
   sources: Array<{ type: SourceType; content: string }>,
   signal?: AbortSignal
 ): Promise<WorkoutStructure> {
-  let workout: WorkoutStructure;
-  
-  // Handle different source types
+  let workout: WorkoutStructure | undefined;
+
   for (const source of sources) {
     if (source.type === 'youtube') {
-      workout = await apiCall<WorkoutStructure>('/ingest/youtube', {
-        method: 'POST',
-        body: JSON.stringify({
-          url: source.content,
-        }),
-      }, signal);
+      const resp = await apiCall<any>(
+        '/ingest/youtube',
+        {
+          method: 'POST',
+          body: JSON.stringify({ url: source.content }),
+        },
+        signal
+      );
+
+      // If backend ever returns a full workout, use it
+      if (resp && resp.blocks) {
+        workout = resp as WorkoutStructure;
+      } else {
+        // Current API just returns summary (title, youtube_strategy, blocks_count)
+        // Build a minimal placeholder workout so the rest of the UI still works
+        workout = {
+          title: resp?.title || 'YouTube Workout',
+          source: source.content,
+          blocks: [
+            {
+              label: 'Workout',
+              structure: null,
+              exercises: [],
+            } as Block,
+          ],
+        } as WorkoutStructure;
+      }
+
       break;
     }
 
     if (source.type === 'image') {
-      // Handle image URL or blob URL - fetch the image and send it to the API
       try {
-        // Fetch the image from the URL (works for both http/https URLs and blob URLs)
         const imageResponse = await fetch(source.content);
         if (!imageResponse.ok) {
           throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
         }
-        
+
         const imageBlob = await imageResponse.blob();
-        
-        // Create FormData with the image file
+
         const formData = new FormData();
-        // Extract filename from URL, or use default
         let fileName = 'image.jpg';
+
         if (source.content.startsWith('blob:')) {
-          // For blob URLs, use a generic filename
           const mimeType = imageBlob.type;
           const extension = mimeType.split('/')[1] || 'jpg';
           fileName = `image.${extension}`;
         } else {
-          // For regular URLs, try to extract filename
           try {
             const urlPath = new URL(source.content).pathname;
             fileName = urlPath.split('/').pop() || 'image.jpg';
           } catch {
-            // If URL parsing fails, use last part of path
             const parts = source.content.split('/');
             fileName = parts[parts.length - 1] || 'image.jpg';
           }
-          // Ensure filename has extension
+
           if (!fileName.includes('.')) {
             const mimeType = imageBlob.type;
             const extension = mimeType.split('/')[1] || 'jpg';
             fileName = `${fileName}.${extension}`;
           }
         }
+
         formData.append('file', imageBlob, fileName);
-        
-        // Check user preference for image processing method
+
         const { getImageProcessingMethod } = await import('./preferences');
         const method = getImageProcessingMethod();
-        
+
         let endpoint = '/ingest/image';
         const usedVisionAPI = method === 'vision';
         if (usedVisionAPI) {
@@ -261,15 +276,17 @@ export async function generateWorkoutStructure(
           formData.append('vision_provider', 'openai');
           formData.append('vision_model', 'gpt-4o-mini');
         }
-        
-        // Call the API with FormData (don't set Content-Type header)
-        workout = await apiCall<WorkoutStructure>(endpoint, {
-          method: 'POST',
-          body: formData,
-          headers: {}, // Let browser set Content-Type with boundary
-        }, signal);
-        
-        // Store whether Vision API was used (for quality analysis)
+
+        workout = await apiCall<WorkoutStructure>(
+          endpoint,
+          {
+            method: 'POST',
+            body: formData,
+            headers: {},
+          },
+          signal
+        );
+
         (workout as any)._usedVisionAPI = usedVisionAPI;
         break;
       } catch (error: any) {
@@ -281,51 +298,56 @@ export async function generateWorkoutStructure(
     }
 
     if (source.type === 'ai-text') {
-      // Normalize pasted text - handle whitespace issues from copy/paste
-      // Preserve line breaks but normalize multiple spaces/tabs
       let normalizedContent = source.content
-        .replace(/\r\n/g, '\n')  // Normalize Windows line endings
-        .replace(/\r/g, '\n')    // Normalize old Mac line endings
-        .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .replace(/[ \t]+/g, ' ')
         .trim();
-      
-      // Auto-detect JSON format
+
       const trimmedContent = normalizedContent;
       const isJson = trimmedContent.startsWith('{') || trimmedContent.startsWith('[');
-      
+
       if (isJson) {
         try {
-          // Try to parse as JSON to validate
           const jsonData = JSON.parse(trimmedContent);
-          // If valid JSON, use JSON endpoint
-          workout = await apiCall<WorkoutStructure>('/ingest/json', {
-            method: 'POST',
-            body: JSON.stringify(jsonData),
-            headers: {
-              'Content-Type': 'application/json',
+          workout = await apiCall<WorkoutStructure>(
+            '/ingest/json',
+            {
+              method: 'POST',
+              body: JSON.stringify(jsonData),
+              headers: {
+                'Content-Type': 'application/json',
+              },
             },
-          }, signal);
-        } catch (e) {
-          // If JSON parsing fails, fall back to text parser
-          // (might be canonical format or freeform text)
-          workout = await apiCall<WorkoutStructure>('/ingest/ai_workout', {
+            signal
+          );
+        } catch {
+          workout = await apiCall<WorkoutStructure>(
+            '/ingest/ai_workout',
+            {
+              method: 'POST',
+              body: normalizedContent,
+              headers: {
+                'Content-Type': 'text/plain',
+              },
+            },
+            signal
+          );
+        }
+      } else {
+        workout = await apiCall<WorkoutStructure>(
+          '/ingest/ai_workout',
+          {
             method: 'POST',
             body: normalizedContent,
             headers: {
               'Content-Type': 'text/plain',
             },
-          }, signal);
-        }
-      } else {
-        // Not JSON, use text parser (handles canonical format and freeform)
-        workout = await apiCall<WorkoutStructure>('/ingest/ai_workout', {
-          method: 'POST',
-          body: normalizedContent,
-          headers: {
-            'Content-Type': 'text/plain',
           },
-        }, signal);
+          signal
+        );
       }
+
       break;
     }
   }
@@ -334,7 +356,6 @@ export async function generateWorkoutStructure(
     throw new Error('Unsupported source type');
   }
 
-  // Normalize the workout structure to ensure it's compatible with StructureWorkout component
   return normalizeWorkoutStructure(workout);
 }
 
