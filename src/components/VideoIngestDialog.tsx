@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
-import { Loader2, Link, Youtube, Instagram, Plus, Trash2, GripVertical, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Loader2, Link, Youtube, Instagram, Plus, Trash2, GripVertical, CheckCircle, AlertCircle, ExternalLink, Sparkles, X, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   detectVideoUrl,
@@ -59,6 +59,20 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // AI Assist state
+  interface AiSuggestion {
+    id: string;
+    label: string;
+    duration_sec?: number;
+    target_reps?: number;
+    notes?: string;
+    accepted: boolean;
+  }
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   // Reset state when dialog closes
   useEffect(() => {
     if (!open) {
@@ -75,6 +89,9 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
       setSearchResults([]);
       setShowSearch(false);
       setError(null);
+      setAiSuggestions([]);
+      setShowAiSuggestions(false);
+      setAiError(null);
     }
   }, [open]);
 
@@ -248,6 +265,83 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
     setExercises((prev) =>
       prev.map((ex) => (ex.id === id ? { ...ex, [field]: value } : ex))
     );
+  }, []);
+
+  // AI Assist - try to extract exercises and let user review
+  const handleTryAiAssist = useCallback(async () => {
+    setIsLoadingAi(true);
+    setAiError(null);
+    setShowAiSuggestions(true);
+
+    try {
+      // Call the ingestor to try extracting (even for Instagram)
+      const result = await ingestFollowAlong(videoUrl, userId);
+      const workout = result.followAlongWorkout;
+
+      if (workout?.steps && workout.steps.length > 0) {
+        // Convert to suggestions format
+        const suggestions: AiSuggestion[] = workout.steps.map((step: any, i: number) => ({
+          id: `ai_${Date.now()}_${i}`,
+          label: step.label || step.name || `Exercise ${i + 1}`,
+          duration_sec: step.durationSec || step.duration_sec || 30,
+          target_reps: step.targetReps || step.target_reps,
+          notes: step.notes,
+          accepted: true, // Default to accepted, user can reject
+        }));
+        setAiSuggestions(suggestions);
+
+        // Also grab title if we don't have one
+        if (!workoutTitle && workout.title) {
+          setWorkoutTitle(workout.title);
+        }
+
+        toast.success(`AI found ${suggestions.length} exercises - review below`);
+      } else {
+        setAiError('AI could not find any exercises in this video');
+      }
+    } catch (err: any) {
+      console.error('AI assist failed:', err);
+      setAiError(err.message || 'AI extraction failed - please add exercises manually');
+    } finally {
+      setIsLoadingAi(false);
+    }
+  }, [videoUrl, userId, workoutTitle]);
+
+  // Toggle a suggestion's accepted state
+  const handleToggleSuggestion = useCallback((id: string) => {
+    setAiSuggestions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, accepted: !s.accepted } : s))
+    );
+  }, []);
+
+  // Add all accepted suggestions to exercises
+  const handleAcceptSuggestions = useCallback(() => {
+    const accepted = aiSuggestions.filter((s) => s.accepted);
+    if (accepted.length === 0) {
+      toast.error('No exercises selected');
+      return;
+    }
+
+    // Convert to ExerciseEntry format and add to exercises
+    const newExercises: ExerciseEntry[] = accepted.map((s) => ({
+      id: `ex_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      label: s.label,
+      duration_sec: s.duration_sec || 30,
+      target_reps: s.target_reps,
+      notes: s.notes,
+    }));
+
+    setExercises((prev) => [...prev, ...newExercises]);
+    setShowAiSuggestions(false);
+    setAiSuggestions([]);
+    toast.success(`Added ${accepted.length} exercises`);
+  }, [aiSuggestions]);
+
+  // Dismiss AI suggestions
+  const handleDismissSuggestions = useCallback(() => {
+    setShowAiSuggestions(false);
+    setAiSuggestions([]);
+    setAiError(null);
   }, []);
 
   const handleSaveManualWorkout = useCallback(async () => {
@@ -476,6 +570,127 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
                       View Video
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* AI Assist Section */}
+            {!showAiSuggestions ? (
+              <Card className="border-dashed bg-muted/30">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium flex items-center gap-1">
+                        <Sparkles className="h-4 w-4 text-purple-500" />
+                        AI Assist (Experimental)
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Try AI extraction - results may vary. You can review and edit.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTryAiAssist}
+                      disabled={isLoadingAi}
+                      className="gap-1"
+                    >
+                      {isLoadingAi ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Trying...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3" />
+                          Try AI
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-purple-200 bg-purple-50/50 dark:bg-purple-950/20">
+                <CardContent className="pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium flex items-center gap-1">
+                      <Sparkles className="h-4 w-4 text-purple-500" />
+                      AI Suggestions
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleDismissSuggestions}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {isLoadingAi && (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+                    </div>
+                  )}
+
+                  {aiError && (
+                    <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/20 p-2 rounded">
+                      {aiError}
+                    </div>
+                  )}
+
+                  {aiSuggestions.length > 0 && (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Click to toggle. Green = keep, Red = discard.
+                      </p>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {aiSuggestions.map((suggestion, i) => (
+                          <button
+                            key={suggestion.id}
+                            onClick={() => handleToggleSuggestion(suggestion.id)}
+                            className={`w-full flex items-center gap-2 p-2 rounded text-left text-sm transition-colors ${
+                              suggestion.accepted
+                                ? 'bg-green-100 dark:bg-green-900/30 border border-green-300'
+                                : 'bg-red-100 dark:bg-red-900/30 border border-red-300 line-through opacity-60'
+                            }`}
+                          >
+                            {suggestion.accepted ? (
+                              <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                            ) : (
+                              <X className="h-4 w-4 text-red-600 flex-shrink-0" />
+                            )}
+                            <span className="text-xs text-muted-foreground w-4">{i + 1}</span>
+                            <span className="flex-1 truncate">{suggestion.label}</span>
+                            {suggestion.duration_sec && (
+                              <span className="text-xs text-muted-foreground">
+                                {suggestion.duration_sec}s
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleAcceptSuggestions}
+                          disabled={aiSuggestions.filter(s => s.accepted).length === 0}
+                          className="flex-1 bg-green-600 hover:bg-green-700"
+                        >
+                          <Check className="h-3 w-3 mr-1" />
+                          Add {aiSuggestions.filter(s => s.accepted).length} Selected
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleDismissSuggestions}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             )}
