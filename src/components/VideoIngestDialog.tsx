@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
-import { Loader2, Link, Youtube, Instagram, Plus, Trash2, GripVertical, CheckCircle, AlertCircle, ExternalLink, Sparkles, X, Check } from 'lucide-react';
+import { Loader2, Link, Youtube, Instagram, Plus, Trash2, GripVertical, CheckCircle, AlertCircle, ExternalLink, Sparkles, X, Check, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   detectVideoUrl,
@@ -73,6 +73,11 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
   const [showAiSuggestions, setShowAiSuggestions] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Parse Description state
+  const [descriptionText, setDescriptionText] = useState('');
+  const [showDescriptionParser, setShowDescriptionParser] = useState(false);
+  const [parsedSuggestions, setParsedSuggestions] = useState<AiSuggestion[]>([]);
+
   // Reset state when dialog closes
   useEffect(() => {
     if (!open) {
@@ -92,6 +97,9 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
       setAiSuggestions([]);
       setShowAiSuggestions(false);
       setAiError(null);
+      setDescriptionText('');
+      setShowDescriptionParser(false);
+      setParsedSuggestions([]);
     }
   }, [open]);
 
@@ -342,6 +350,115 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
     setShowAiSuggestions(false);
     setAiSuggestions([]);
     setAiError(null);
+  }, []);
+
+  // Parse description text to extract exercises
+  const parseDescriptionForExercises = useCallback((text: string): AiSuggestion[] => {
+    if (!text.trim()) return [];
+
+    const exercises: AiSuggestion[] = [];
+    const lines = text.split('\n');
+
+    // Patterns to match exercise lines:
+    // 1. "1. Exercise Name" or "1) Exercise Name" or "1: Exercise Name"
+    // 2. "• Exercise Name" or "- Exercise Name" or "→ Exercise Name"
+    // 3. Lines starting with emoji + Exercise
+    const numberedPattern = /^\s*(\d+)\s*[.):]\s*(.+)/;
+    const bulletPattern = /^\s*[•\-→>]\s*(.+)/;
+    const emojiNumberPattern = /^\s*[\u{1F1E0}-\u{1F9FF}]?\s*(\d+)\s*[.):]\s*(.+)/u;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      let exerciseName: string | null = null;
+
+      // Try numbered pattern first
+      const numberedMatch = trimmed.match(numberedPattern);
+      if (numberedMatch) {
+        exerciseName = numberedMatch[2].trim();
+      } else {
+        // Try bullet pattern
+        const bulletMatch = trimmed.match(bulletPattern);
+        if (bulletMatch) {
+          exerciseName = bulletMatch[1].trim();
+        } else {
+          // Try emoji number pattern
+          const emojiMatch = trimmed.match(emojiNumberPattern);
+          if (emojiMatch) {
+            exerciseName = emojiMatch[2].trim();
+          }
+        }
+      }
+
+      if (exerciseName && exerciseName.length > 2) {
+        // Clean up the exercise name - remove trailing arrows, brackets, etc.
+        exerciseName = exerciseName
+          .replace(/→.*$/, '') // Remove "→ Supported" type suffixes
+          .replace(/\s*\([^)]*\)\s*$/, '') // Remove trailing parentheses
+          .replace(/\s*-\s*(Easy|Hard|Moderate|Dynamic|Static|Supported|Loaded)\s*$/i, '') // Remove difficulty hints
+          .trim();
+
+        if (exerciseName.length > 2) {
+          exercises.push({
+            id: `parsed_${Date.now()}_${exercises.length}`,
+            label: exerciseName,
+            duration_sec: 30,
+            accepted: true, // Default to accepted since user explicitly pasted this
+          });
+        }
+      }
+    }
+
+    return exercises;
+  }, []);
+
+  // Handle description parse
+  const handleParseDescription = useCallback(() => {
+    const parsed = parseDescriptionForExercises(descriptionText);
+    if (parsed.length === 0) {
+      toast.error('No exercises found. Try text with numbered items like "1. Exercise Name"');
+      return;
+    }
+    setParsedSuggestions(parsed);
+    toast.success(`Found ${parsed.length} exercises`);
+  }, [descriptionText, parseDescriptionForExercises]);
+
+  // Toggle a parsed suggestion's accepted state
+  const handleToggleParsedSuggestion = useCallback((id: string) => {
+    setParsedSuggestions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, accepted: !s.accepted } : s))
+    );
+  }, []);
+
+  // Add parsed suggestions to exercises
+  const handleAcceptParsedSuggestions = useCallback(() => {
+    const accepted = parsedSuggestions.filter((s) => s.accepted);
+    if (accepted.length === 0) {
+      toast.error('No exercises selected');
+      return;
+    }
+
+    const newExercises: ExerciseEntry[] = accepted.map((s) => ({
+      id: `ex_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      label: s.label,
+      duration_sec: s.duration_sec || 30,
+      target_reps: s.target_reps,
+      notes: s.notes,
+    }));
+
+    setExercises((prev) => [...prev, ...newExercises]);
+    setShowDescriptionParser(false);
+    setParsedSuggestions([]);
+    setDescriptionText('');
+    toast.success(`Added ${accepted.length} exercises`);
+  }, [parsedSuggestions]);
+
+  // Dismiss description parser
+  const handleDismissDescriptionParser = useCallback(() => {
+    setShowDescriptionParser(false);
+    setParsedSuggestions([]);
+    setDescriptionText('');
   }, []);
 
   const handleSaveManualWorkout = useCallback(async () => {
@@ -707,6 +824,160 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
                           onClick={handleDismissSuggestions}
                         >
                           Cancel
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Parse Description Section */}
+            {!showDescriptionParser ? (
+              <Card className="border-dashed bg-muted/30">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium flex items-center gap-1">
+                        <FileText className="h-4 w-4 text-blue-500" />
+                        Parse Description
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Paste the video caption to extract exercises
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowDescriptionParser(true)}
+                      className="gap-1"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Paste Text
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+                <CardContent className="pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium flex items-center gap-1">
+                      <FileText className="h-4 w-4 text-blue-500" />
+                      Parse Description
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleDismissDescriptionParser}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {parsedSuggestions.length === 0 ? (
+                    <>
+                      <textarea
+                        className="w-full h-32 p-3 text-sm border rounded-lg resize-none bg-background"
+                        placeholder={`Paste the video description/caption here...
+
+Example:
+1. Side-Lying Foam Roller IR
+2. Frog Pose IR Alternating
+3. Kneeling W Squat`}
+                        value={descriptionText}
+                        onChange={(e) => setDescriptionText(e.target.value)}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleParseDescription}
+                          disabled={!descriptionText.trim()}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700"
+                        >
+                          <FileText className="h-3 w-3 mr-1" />
+                          Parse Exercises
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleDismissDescriptionParser}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          Click to toggle ({parsedSuggestions.filter(s => s.accepted).length}/{parsedSuggestions.length} selected)
+                        </p>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs px-2"
+                            onClick={() => setParsedSuggestions(prev => prev.map(s => ({ ...s, accepted: false })))}
+                          >
+                            Reject All
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs px-2"
+                            onClick={() => setParsedSuggestions(prev => prev.map(s => ({ ...s, accepted: true })))}
+                          >
+                            Select All
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {parsedSuggestions.map((suggestion, i) => (
+                          <button
+                            key={suggestion.id}
+                            onClick={() => handleToggleParsedSuggestion(suggestion.id)}
+                            className={`w-full flex items-center gap-2 p-2 rounded text-left text-sm transition-colors ${
+                              suggestion.accepted
+                                ? 'bg-green-100 dark:bg-green-900/30 border border-green-300'
+                                : 'bg-red-100 dark:bg-red-900/30 border border-red-300 line-through opacity-60'
+                            }`}
+                          >
+                            {suggestion.accepted ? (
+                              <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                            ) : (
+                              <X className="h-4 w-4 text-red-600 flex-shrink-0" />
+                            )}
+                            <span className="text-xs text-muted-foreground w-4">{i + 1}</span>
+                            <span className="flex-1 truncate">{suggestion.label}</span>
+                            {suggestion.duration_sec && (
+                              <span className="text-xs text-muted-foreground">
+                                {suggestion.duration_sec}s
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleAcceptParsedSuggestions}
+                          disabled={parsedSuggestions.filter(s => s.accepted).length === 0}
+                          className="flex-1 bg-green-600 hover:bg-green-700"
+                        >
+                          <Check className="h-3 w-3 mr-1" />
+                          Add {parsedSuggestions.filter(s => s.accepted).length} Selected
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setParsedSuggestions([]);
+                            // Keep description text so user can edit and re-parse
+                          }}
+                        >
+                          Re-edit
                         </Button>
                       </div>
                     </>
