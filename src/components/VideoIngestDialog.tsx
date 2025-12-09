@@ -286,7 +286,7 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
           duration_sec: step.durationSec || step.duration_sec || 30,
           target_reps: step.targetReps || step.target_reps,
           notes: step.notes,
-          accepted: true, // Default to accepted, user can reject
+          accepted: false, // Default to NOT accepted - user opts in to keep good ones
         }));
         setAiSuggestions(suggestions);
 
@@ -642,9 +642,29 @@ export function VideoIngestDialog({ open, onOpenChange, userId, onWorkoutCreated
 
                   {aiSuggestions.length > 0 && (
                     <>
-                      <p className="text-xs text-muted-foreground">
-                        Click to toggle. Green = keep, Red = discard.
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          Click to toggle ({aiSuggestions.filter(s => s.accepted).length}/{aiSuggestions.length} selected)
+                        </p>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs px-2"
+                            onClick={() => setAiSuggestions(prev => prev.map(s => ({ ...s, accepted: false })))}
+                          >
+                            Reject All
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs px-2"
+                            onClick={() => setAiSuggestions(prev => prev.map(s => ({ ...s, accepted: true })))}
+                          >
+                            Select All
+                          </Button>
+                        </div>
+                      </div>
                       <div className="space-y-1 max-h-40 overflow-y-auto">
                         {aiSuggestions.map((suggestion, i) => (
                           <button
