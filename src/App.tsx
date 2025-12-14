@@ -824,10 +824,21 @@ export default function App() {
       return { id: Math.random().toString(), type, content: content.join(':') };
     }));
     setSelectedDevice(historyItem.device);
-    setCurrentStep('structure');
+    setValidation(historyItem.validation || null); // Restore validation
+    setExports(historyItem.exports || null); // Restore exports
+    setIsEditingFromHistory(true); // Mark as editing from history (for saving updates)
+    setEditingWorkoutId(historyItem.id); // Store the workout ID for saving
+    // Go directly to export step if we have exports, otherwise to structure
+    if (historyItem.exports) {
+      setCurrentStep('export');
+    } else if (historyItem.validation) {
+      setCurrentStep('validate');
+    } else {
+      setCurrentStep('structure');
+    }
     setCurrentView('workflow');
     setWorkoutSaved(true); // Loaded from history, already saved
-    toast.success('Workout loaded from history');
+    toast.success('Workout loaded');
   };
   const handleEditFromHistory = (historyItem: any) => {
     // Normalize workout structure to convert old format (supersets) to new format (exercises)
