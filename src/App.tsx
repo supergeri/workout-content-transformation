@@ -1528,13 +1528,16 @@ export default function App() {
               setCurrentStep('structure');
             }}
             onLoadWorkout={(item) => {
-              // Load the workout and go to workflow
+              // Load the workout and go directly to export
               setWorkout(item.workout);
               setValidation(item.validation || null);
+              setExports(item.exports || null);
               setSources(item.sources || []);
               setSelectedDevice(item.device as any);
+              setIsEditingFromHistory(true);
+              setEditingWorkoutId(item.id);
               setCurrentView('workflow');
-              setCurrentStep('structure');
+              setCurrentStep('export');
             }}
             onDeleteWorkout={(id) => {
               // Delete is handled internally by UnifiedWorkouts
