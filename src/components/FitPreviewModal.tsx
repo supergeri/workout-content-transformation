@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
-import { Repeat, Timer, Dumbbell, Eye, Loader2, Copy, Check } from 'lucide-react';
+import { Repeat, Timer, Dumbbell, Eye, Loader2 } from 'lucide-react';
 import { WorkoutStructure, ValidationResponse } from '../types/workout';
 import { applyValidationMappings } from '../lib/workout-utils';
-import { toast } from 'sonner';
 
 interface FitPreviewModalProps {
   workout: WorkoutStructure;
@@ -33,25 +32,6 @@ export function FitPreviewModal({ workout, validation, trigger, useLapButton = f
   const [steps, setSteps] = useState<BackendPreviewStep[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const copyDebugJson = async () => {
-    const mappedWorkout = applyValidationMappings(workout, validation);
-    const debugData = {
-      original_workout: workout,
-      mapped_workout: mappedWorkout,
-      validation: validation,
-      preview_steps: steps,
-    };
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
-      setCopied(true);
-      toast.success('Debug JSON copied to clipboard');
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      toast.error('Failed to copy debug JSON');
-    }
-  };
 
   // Fetch preview steps from backend when modal opens
   useEffect(() => {
@@ -108,23 +88,10 @@ export function FitPreviewModal({ workout, validation, trigger, useLapButton = f
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <DialogTitle>Garmin Watch Preview</DialogTitle>
-              <DialogDescription>
-                How this workout will appear on your Garmin watch
-              </DialogDescription>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={copyDebugJson}
-              className="flex items-center gap-2"
-            >
-              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              Copy JSON
-            </Button>
-          </div>
+          <DialogTitle>Garmin Watch Preview</DialogTitle>
+          <DialogDescription>
+            How this workout will appear on your Garmin watch
+          </DialogDescription>
         </DialogHeader>
 
         {/* Watch-like display */}

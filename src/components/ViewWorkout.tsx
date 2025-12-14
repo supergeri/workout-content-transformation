@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { X, Clock, Watch, Bike, Dumbbell } from 'lucide-react';
+import { X, Clock, Watch, Bike, Dumbbell, Copy, Check } from 'lucide-react';
 import { WorkoutHistoryItem } from '../lib/workout-history';
 import { Block, Exercise } from '../types/workout';
 import { getStructureDisplayName } from '../lib/workout-utils';
+import { toast } from 'sonner';
 
 type Props = {
   workout: WorkoutHistoryItem;
@@ -65,9 +66,32 @@ export function ViewWorkout({ workout, onClose }: Props) {
   const workoutData = workout.workout || workout.data || workout;
   const blocks = workoutData?.blocks || [];
   const hasExports = !!(workout.exports);
+  const [copied, setCopied] = useState(false);
 
   // Count total exercises across all blocks
   const totalExercises = blocks.reduce((sum, block) => sum + countBlockExercises(block), 0);
+
+  // Copy debug JSON for debugging
+  const copyDebugJson = async () => {
+    const debugData = {
+      workout: workout.workout,
+      validation: workout.validation,
+      exports: workout.exports,
+      device: workout.device,
+      sources: workout.sources,
+      id: workout.id,
+      createdAt: workout.createdAt,
+      updatedAt: workout.updatedAt,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
+      setCopied(true);
+      toast.success('Debug JSON copied to clipboard');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error('Failed to copy debug JSON');
+    }
+  };
   
   // Helper to format block metadata
   const getBlockMetadata = (block: Block): string => {
@@ -163,18 +187,29 @@ export function ViewWorkout({ workout, onClose }: Props) {
                 </div>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-              className="h-9 w-9 flex-shrink-0"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={copyDebugJson}
+                className="flex items-center gap-2"
+              >
+                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                Copy JSON
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="h-9 w-9"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
