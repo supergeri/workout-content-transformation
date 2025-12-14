@@ -36,10 +36,10 @@ interface ValidateMapProps {
   selectedDevice: DeviceId;
 }
 
-export function ValidateMap({ 
-  validation, 
+export function ValidateMap({
+  validation,
   workout,
-  onReValidate, 
+  onReValidate,
   onProcess,
   loading,
   selectedDevice
@@ -47,6 +47,43 @@ export function ValidateMap({
   const [localValidation, setLocalValidation] = useState(validation);
   const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set());
   const [confirmedMappings, setConfirmedMappings] = useState<Set<string>>(new Set());
+
+  // Store original order of all exercises for maintaining position when moving between categories
+  // This creates a stable order based on the initial validation response
+  const [originalOrder] = useState<Map<string, number>>(() => {
+    const orderMap = new Map<string, number>();
+    const allExercises = [
+      ...validation.validated_exercises,
+      ...validation.needs_review,
+      ...validation.unmapped_exercises
+    ];
+    // Use location + original_name as key since same exercise can appear multiple times
+    allExercises.forEach((ex, idx) => {
+      const key = `${ex.location}-${ex.original_name}-${idx}`;
+      orderMap.set(key, idx);
+    });
+    return orderMap;
+  });
+
+  // Helper to get sort key for an exercise
+  const getExerciseSortKey = (ex: ValidationResult, fallbackIdx: number): number => {
+    // Try to find by location + name pattern
+    for (const [key, order] of originalOrder.entries()) {
+      if (key.startsWith(`${ex.location}-${ex.original_name}-`)) {
+        return order;
+      }
+    }
+    return fallbackIdx + 1000; // Put unknowns at end
+  };
+
+  // Helper function to sort exercises by their original order
+  const sortByOriginalOrder = (exercises: ValidationResult[]): ValidationResult[] => {
+    return [...exercises].sort((a, b) => {
+      const orderA = getExerciseSortKey(a, 0);
+      const orderB = getExerciseSortKey(b, 0);
+      return orderA - orderB;
+    });
+  };
 
   const handleApplyMapping = (exerciseName: string, newMapping: string) => {
     // Update the local validation state
@@ -99,6 +136,8 @@ export function ValidateMap({
           status: 'valid'
         });
       });
+      // Sort to maintain original workout order
+      updatedValidation.validated_exercises = sortByOriginalOrder(updatedValidation.validated_exercises);
       // Remove from BOTH arrays to ensure no duplicates
       updatedValidation.needs_review = updatedValidation.needs_review.filter(
         ex => ex.original_name !== exerciseName
@@ -181,6 +220,8 @@ export function ValidateMap({
           confidence: Math.max(exercise.confidence, 0.95)
         });
       });
+      // Sort to maintain original workout order
+      updatedValidation.validated_exercises = sortByOriginalOrder(updatedValidation.validated_exercises);
 
       // Update can_proceed: true only if no unmapped exercises remain
       // Note: Unconfirmed mappings are checked separately in canExport logic
@@ -325,7 +366,9 @@ export function ValidateMap({
         confidence: Math.max(ex.confidence, 0.95)
       });
     });
-    
+    // Sort to maintain original workout order
+    updatedValidation.validated_exercises = sortByOriginalOrder(updatedValidation.validated_exercises);
+
     // Update can_proceed: true if no unmapped exercises remain
     updatedValidation.can_proceed = updatedValidation.unmapped_exercises.length === 0;
     
