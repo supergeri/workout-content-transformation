@@ -1,124 +1,82 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
-import { Repeat, Timer, Dumbbell, Eye } from 'lucide-react';
+import { Repeat, Timer, Dumbbell, Eye, Loader2 } from 'lucide-react';
 import { WorkoutStructure } from '../types/workout';
 
 interface FitPreviewModalProps {
   workout: WorkoutStructure;
   trigger?: React.ReactNode;
+  useLapButton?: boolean;
 }
 
-interface PreviewStep {
-  name: string;
+// Backend preview step format
+interface BackendPreviewStep {
+  type: 'exercise' | 'rest' | 'repeat';
+  display_name: string;
+  original_name?: string;
+  category_id?: number;
+  category_name?: string;
+  duration_type?: string;
+  duration_display?: string;
   reps?: number | string;
-  distance?: string;
-  duration?: number;
-  restDuration?: number;
   sets?: number;
-  type?: string;
+  rest_seconds?: number;
+  repeat_count?: number;
 }
 
-function getGarminDisplayName(name: string): string {
-  if (!name) return 'Unknown';
-  const nameLower = name.toLowerCase();
-  
-  if (nameLower.includes('trap bar')) return 'Trap Bar Deadlift';
-  if (nameLower.includes('push') && nameLower.includes('up')) return 'Push Up';
-  if (nameLower.includes('incline') && nameLower.includes('bench')) return 'Incline Bench Press';
-  if (nameLower.includes('bench') || nameLower.includes('chest press')) return 'Bench Press';
-  if (nameLower.includes('split squat') || nameLower.includes('bulgarian')) return 'Bulgarian Split Squat';
-  if (nameLower.includes('squat')) return 'Squat';
-  if (nameLower.includes('deadlift')) return 'Deadlift';
-  if (nameLower.includes('burpee')) return 'Burpee';
-  if (nameLower.includes('lunge')) return 'Lunge';
-  if (nameLower.includes('curl')) return 'Curl';
-  if (nameLower.includes('crunch')) return 'Crunch';
-  if (nameLower.includes('plank')) return 'Plank';
-  if (nameLower.includes('row')) return 'Row';
-  if (nameLower.includes('pull') && nameLower.includes('down')) return 'Lat Pulldown';
-  if (nameLower.includes('pull') && nameLower.includes('up')) return 'Pull Up';
-  if (nameLower.includes('dip')) return 'Dip';
-  if (nameLower.includes('run')) return 'Run';
-  if (nameLower.includes('ski')) return 'Ski Erg';
-  
-  return name;
-}
-
-function blocksToPreviewSteps(workout: WorkoutStructure): PreviewStep[] {
-  const steps: PreviewStep[] = [];
-  
-  if (!workout?.blocks) return steps;
-  
-  for (const block of workout.blocks) {
-    const restBetween = block.rest_between_sec;
-    const allExercises: any[] = [];
-    
-    if (block.supersets && Array.isArray(block.supersets)) {
-      for (const superset of block.supersets) {
-        if (superset.exercises && Array.isArray(superset.exercises)) {
-          allExercises.push(...superset.exercises);
-        }
-      }
-    }
-    
-    if (block.exercises && Array.isArray(block.exercises)) {
-      allExercises.push(...block.exercises);
-    }
-    
-    for (const exercise of allExercises) {
-      const name = exercise.name || exercise.exercise_name || 'Unknown';
-      
-      // Get reps - could be number, string like "1000m", or undefined
-      const repsValue = exercise.reps || exercise.rep_count;
-      let reps: number | string | undefined;
-      let distance: string | undefined;
-      
-      if (repsValue) {
-        // Check if it's a distance (contains 'm' for meters)
-        if (typeof repsValue === 'string' && repsValue.includes('m')) {
-          distance = repsValue;
-        } else {
-          reps = repsValue;
-        }
-      }
-      
-      // Get sets - only if explicitly defined and > 1
-      const setsValue = exercise.sets || exercise.set_count;
-      const sets = setsValue && setsValue > 1 ? setsValue : undefined;
-      
-      // Get duration if available
-      const duration = exercise.duration_sec || exercise.duration;
-      
-      steps.push({
-        name: getGarminDisplayName(name),
-        reps,
-        distance,
-        duration,
-        sets,
-        restDuration: restBetween,
-        type: exercise.type,
-      });
-    }
-  }
-  
-  return steps;
-}
-
-export function FitPreviewModal({ workout, trigger }: FitPreviewModalProps) {
+export function FitPreviewModal({ workout, trigger, useLapButton = false }: FitPreviewModalProps) {
   const [open, setOpen] = useState(false);
-  const steps = blocksToPreviewSteps(workout);
-  
+  const [steps, setSteps] = useState<BackendPreviewStep[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch preview steps from backend when modal opens
+  useEffect(() => {
+    if (!open || !workout) return;
+
+    const fetchPreviewSteps = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+        const res = await fetch(`${MAPPER_API_BASE_URL}/map/preview-steps?use_lap_button=${useLapButton}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blocks_json: workout }),
+        });
+
+        if (!res.ok) {
+          throw new Error('Failed to fetch preview');
+        }
+
+        const data = await res.json();
+        setSteps(data.steps || []);
+      } catch (err) {
+        console.error('Failed to fetch preview steps:', err);
+        setError('Failed to load preview');
+        // Fallback to empty
+        setSteps([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPreviewSteps();
+  }, [open, workout, useLapButton]);
+
   const defaultTrigger = (
     <Button variant="outline" size="sm">
       <Eye className="w-4 h-4 mr-2" />
       Preview on Watch
     </Button>
   );
-  
-  // Calculate total sets
-  const totalSets = steps.reduce((sum, s) => sum + (s.sets || 1), 0);
-  
+
+  // Filter to only exercise steps for counting
+  const exerciseSteps = steps.filter(s => s.type === 'exercise');
+  const totalSets = exerciseSteps.reduce((sum, s) => sum + (s.sets || 1), 0);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -131,7 +89,7 @@ export function FitPreviewModal({ workout, trigger }: FitPreviewModalProps) {
             How this workout will appear on your Garmin watch
           </DialogDescription>
         </DialogHeader>
-        
+
         {/* Watch-like display */}
         <div style={{ backgroundColor: '#1a1a1a', borderRadius: '24px', padding: '20px' }}>
           <div style={{ border: '2px solid #333', borderRadius: '16px', padding: '16px', backgroundColor: '#000' }}>
@@ -139,17 +97,26 @@ export function FitPreviewModal({ workout, trigger }: FitPreviewModalProps) {
             <div style={{ textAlign: 'center', fontSize: '12px', color: '#888', marginBottom: '16px', paddingBottom: '8px', borderBottom: '1px solid #333' }}>
               {workout?.title || 'Workout'}
             </div>
-            
-            {steps.length === 0 ? (
+
+            {loading ? (
+              <div style={{ textAlign: 'center', color: '#666', padding: '32px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#60a5fa' }} />
+                <span>Loading preview...</span>
+              </div>
+            ) : error ? (
+              <div style={{ textAlign: 'center', color: '#ef4444', padding: '32px 0' }}>
+                {error}
+              </div>
+            ) : exerciseSteps.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', padding: '32px 0' }}>
                 No exercises found
               </div>
             ) : (
               <div style={{ maxHeight: '256px', overflowY: 'auto' }}>
-                {steps.map((step, idx) => (
-                  <div key={idx} style={{ 
-                    borderLeft: '3px solid #3b82f6', 
-                    paddingLeft: '12px', 
+                {exerciseSteps.map((step, idx) => (
+                  <div key={idx} style={{
+                    borderLeft: '3px solid #3b82f6',
+                    paddingLeft: '12px',
                     marginBottom: '12px',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderRadius: '0 8px 8px 0',
@@ -158,50 +125,26 @@ export function FitPreviewModal({ workout, trigger }: FitPreviewModalProps) {
                     {/* Exercise name */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Dumbbell style={{ width: '14px', height: '14px', color: '#60a5fa' }} />
-                      <span style={{ color: '#93c5fd', fontSize: '14px', fontWeight: 500 }}>{step.name}</span>
+                      <span style={{ color: '#93c5fd', fontSize: '14px', fontWeight: 500 }}>{step.display_name}</span>
                     </div>
-                    
-                    {/* Details row - only show what's actually defined */}
+
+                    {/* Details row */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', marginLeft: '22px', fontSize: '12px' }}>
-                      {/* Distance */}
-                      {step.distance && (
-                        <span style={{ 
-                          backgroundColor: '#059669', 
-                          color: 'white', 
-                          padding: '2px 8px', 
+                      {/* Duration display from backend */}
+                      {step.duration_display && (
+                        <span style={{
+                          backgroundColor: step.duration_type === 'distance' ? '#059669' :
+                                         step.duration_type === 'time' ? '#7c3aed' :
+                                         step.duration_type === 'lap_button' ? '#f59e0b' : '#1d4ed8',
+                          color: 'white',
+                          padding: '2px 8px',
                           borderRadius: '4px',
                           fontSize: '11px'
                         }}>
-                          {step.distance}
+                          {step.duration_display}
                         </span>
                       )}
-                      
-                      {/* Reps - only if defined */}
-                      {step.reps && !step.distance && (
-                        <span style={{ 
-                          backgroundColor: '#1d4ed8', 
-                          color: 'white', 
-                          padding: '2px 8px', 
-                          borderRadius: '4px',
-                          fontSize: '11px'
-                        }}>
-                          {step.reps} reps
-                        </span>
-                      )}
-                      
-                      {/* Duration */}
-                      {step.duration && (
-                        <span style={{ 
-                          backgroundColor: '#7c3aed', 
-                          color: 'white', 
-                          padding: '2px 8px', 
-                          borderRadius: '4px',
-                          fontSize: '11px'
-                        }}>
-                          {step.duration}s
-                        </span>
-                      )}
-                      
+
                       {/* Sets - only if > 1 */}
                       {step.sets && step.sets > 1 && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#4ade80', fontWeight: 500 }}>
@@ -209,25 +152,17 @@ export function FitPreviewModal({ workout, trigger }: FitPreviewModalProps) {
                           {step.sets}x
                         </span>
                       )}
-                      
-                      {/* Rest - only if defined */}
-                      {step.restDuration && step.restDuration > 0 && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#666' }}>
-                          <Timer style={{ width: '12px', height: '12px' }} />
-                          {step.restDuration}s
-                        </span>
-                      )}
-                      
-                      {/* Type badge */}
-                      {step.type && (
-                        <span style={{ 
-                          backgroundColor: '#374151', 
-                          color: '#9ca3af', 
-                          padding: '2px 8px', 
+
+                      {/* Category badge */}
+                      {step.category_name && (
+                        <span style={{
+                          backgroundColor: '#374151',
+                          color: '#9ca3af',
+                          padding: '2px 8px',
                           borderRadius: '4px',
                           fontSize: '10px'
                         }}>
-                          {step.type}
+                          {step.category_name}
                         </span>
                       )}
                     </div>
@@ -235,15 +170,15 @@ export function FitPreviewModal({ workout, trigger }: FitPreviewModalProps) {
                 ))}
               </div>
             )}
-            
+
             {/* Footer */}
             <div style={{ textAlign: 'center', fontSize: '11px', color: '#666', marginTop: '16px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-              {steps.length} exercise{steps.length !== 1 ? 's' : ''}
-              {totalSets > steps.length && ` • ${totalSets} total sets`}
+              {exerciseSteps.length} exercise{exerciseSteps.length !== 1 ? 's' : ''}
+              {totalSets > exerciseSteps.length && ` \u2022 ${totalSets} total sets`}
             </div>
           </div>
         </div>
-        
+
         {/* Legend */}
         <div className="flex justify-center gap-6 text-xs text-muted-foreground pt-2">
           <div className="flex items-center gap-1">

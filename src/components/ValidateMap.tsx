@@ -72,26 +72,32 @@ export function ValidateMap({
       ...updatedValidation.unmapped_exercises
     ].find(ex => ex.original_name === exerciseName)?.mapped_to;
 
-    // Move updated exercise to validated - remove from both needs_review AND unmapped_exercises
-    // First, check if exercise exists in needs_review
-    const exerciseInNeedsReview = updatedValidation.needs_review.find(
-      ex => ex.original_name === exerciseName
-    );
-    
-    // Then check if exercise exists in unmapped_exercises
-    const exerciseInUnmapped = updatedValidation.unmapped_exercises.find(
-      ex => ex.original_name === exerciseName
-    );
-    
-    // Use whichever one we find, prioritizing needs_review
-    const movedExercise = exerciseInNeedsReview || exerciseInUnmapped;
+    // Move ALL updated exercises to validated - remove from both needs_review AND unmapped_exercises
+    // Important: We need to move ALL exercises with this name, not just one!
+    // (e.g., if there are 5 "Ski" exercises, move all 5)
 
-    if (movedExercise) {
-      updatedValidation.validated_exercises.push({
-        ...movedExercise,
-        mapped_to: newMapping,
-        confidence: 0.95,
-        status: 'valid'
+    // Find ALL exercises with this name in needs_review
+    const exercisesInNeedsReview = updatedValidation.needs_review.filter(
+      ex => ex.original_name === exerciseName
+    );
+
+    // Find ALL exercises with this name in unmapped_exercises
+    const exercisesInUnmapped = updatedValidation.unmapped_exercises.filter(
+      ex => ex.original_name === exerciseName
+    );
+
+    // Combine all exercises to move (prioritize needs_review)
+    const exercisesToMove = [...exercisesInNeedsReview, ...exercisesInUnmapped];
+
+    if (exercisesToMove.length > 0) {
+      // Add ALL exercises with this name to validated_exercises
+      exercisesToMove.forEach(exercise => {
+        updatedValidation.validated_exercises.push({
+          ...exercise,
+          mapped_to: newMapping,
+          confidence: 0.95,
+          status: 'valid'
+        });
       });
       // Remove from BOTH arrays to ensure no duplicates
       updatedValidation.needs_review = updatedValidation.needs_review.filter(
@@ -136,49 +142,55 @@ export function ValidateMap({
     // Add to confirmed mappings
     const updatedConfirmed = new Set([...confirmedMappings, exerciseName]);
     setConfirmedMappings(updatedConfirmed);
-    
-    // Move confirmed exercise from needs_review to validated_exercises
+
+    // Move ALL confirmed exercises with this name from needs_review to validated_exercises
+    // Important: We need to move ALL exercises with this name, not just one!
+    // (e.g., if there are 5 "Ski" exercises, move all 5)
     const updatedValidation = { ...localValidation };
-    
-    // Find the exercise in needs_review (prioritize this)
-    let confirmedExercise = updatedValidation.needs_review.find(
+
+    // Find ALL exercises with this name in needs_review
+    const exercisesInNeedsReview = updatedValidation.needs_review.filter(
       ex => ex.original_name === exerciseName
     );
-    
-    // If not in needs_review, check unmapped_exercises
-    if (!confirmedExercise) {
-      confirmedExercise = updatedValidation.unmapped_exercises.find(
-        ex => ex.original_name === exerciseName
-      );
-    }
-    
-    if (confirmedExercise) {
+
+    // Find ALL exercises with this name in unmapped_exercises
+    const exercisesInUnmapped = updatedValidation.unmapped_exercises.filter(
+      ex => ex.original_name === exerciseName
+    );
+
+    // Combine all exercises to move
+    const exercisesToMove = [...exercisesInNeedsReview, ...exercisesInUnmapped];
+
+    if (exercisesToMove.length > 0) {
       // Remove from needs_review
       updatedValidation.needs_review = updatedValidation.needs_review.filter(
         ex => ex.original_name !== exerciseName
       );
-      
+
       // Also remove from unmapped_exercises to prevent it appearing there
       updatedValidation.unmapped_exercises = updatedValidation.unmapped_exercises.filter(
         ex => ex.original_name !== exerciseName
       );
-      
-      // Add to validated_exercises with confirmed status
-      updatedValidation.validated_exercises.push({
-        ...confirmedExercise,
-        mapped_to: confirmedExercise.mapped_to || confirmedExercise.original_name, // Ensure mapped_to is set
-        status: 'valid' as const,
-        confidence: Math.max(confirmedExercise.confidence, 0.95)
+
+      // Add ALL exercises with this name to validated_exercises with confirmed status
+      exercisesToMove.forEach(exercise => {
+        updatedValidation.validated_exercises.push({
+          ...exercise,
+          mapped_to: exercise.mapped_to || exercise.original_name, // Ensure mapped_to is set
+          status: 'valid' as const,
+          confidence: Math.max(exercise.confidence, 0.95)
+        });
       });
-      
+
       // Update can_proceed: true only if no unmapped exercises remain
       // Note: Unconfirmed mappings are checked separately in canExport logic
       updatedValidation.can_proceed = updatedValidation.unmapped_exercises.length === 0;
-      
+
       setLocalValidation(updatedValidation);
     }
-    
-    toast.success(`Confirmed mapping for ${exerciseName}`, {
+
+    const count = exercisesToMove.length;
+    toast.success(`Confirmed mapping for ${exerciseName}${count > 1 ? ` (${count} exercises)` : ''}`, {
       duration: 2000,
     });
   };
@@ -302,16 +314,16 @@ export function ValidateMap({
       ex => !updatedConfirmed.has(ex.original_name)
     );
     
-    // Add to validated_exercises (avoid duplicates)
+    // Add ALL exercises to validated_exercises
+    // Important: Don't deduplicate by original_name - we want ALL instances
+    // (e.g., if there are 5 "Ski" exercises, add all 5)
     exercisesToMove.forEach(ex => {
-      if (!updatedValidation.validated_exercises.some(e => e.original_name === ex.original_name)) {
-        updatedValidation.validated_exercises.push({
-          ...ex,
-          mapped_to: ex.mapped_to || ex.original_name,
-          status: 'valid' as const,
-          confidence: Math.max(ex.confidence, 0.95)
-        });
-      }
+      updatedValidation.validated_exercises.push({
+        ...ex,
+        mapped_to: ex.mapped_to || ex.original_name,
+        status: 'valid' as const,
+        confidence: Math.max(ex.confidence, 0.95)
+      });
     });
     
     // Update can_proceed: true if no unmapped exercises remain
@@ -319,7 +331,12 @@ export function ValidateMap({
     
     setLocalValidation(updatedValidation);
     
-    toast.success(`Confirmed ${unconfirmed.length} mapping(s)`, {
+    const totalExercises = exercisesToMove.length;
+    const mappingText = unconfirmed.length === 1 ? 'mapping' : 'mappings';
+    const exerciseText = totalExercises > unconfirmed.length
+      ? ` (${totalExercises} exercises total)`
+      : '';
+    toast.success(`Confirmed ${unconfirmed.length} ${mappingText}${exerciseText}`, {
       duration: 3000,
     });
   };

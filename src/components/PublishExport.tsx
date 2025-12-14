@@ -1,15 +1,15 @@
 import { FitPreviewModal } from "./FitPreviewModal";
 import { TrainerDistribution } from './TrainerDistribution';
 import { Switch } from './ui/switch';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { 
+import {
   Download,
-  Copy, 
-  Check, 
-  Send, 
+  Copy,
+  Check,
+  Send,
   Eye,
   CheckCircle2,
   AlertTriangle,
@@ -22,7 +22,10 @@ import {
   Activity,
   Save,
   Loader2,
-  FolderOpen
+  FolderOpen,
+  Info,
+  Dumbbell,
+  Timer
 } from 'lucide-react';
 import { ExportFormats, ValidationResponse } from '../types/workout';
 import { DeviceId } from '../lib/devices';
@@ -53,6 +56,16 @@ import { createStravaActivity, checkAndRefreshStravaToken, StravaTokenExpiredErr
 import { formatWorkoutForStrava } from '../lib/workout-utils';
 import { isAccountConnected } from '../lib/linked-accounts';
 
+interface FitMetadata {
+  detected_sport: string;
+  detected_sport_id: number;
+  warnings: string[];
+  exercise_count: number;
+  has_running: boolean;
+  has_cardio: boolean;
+  has_strength: boolean;
+}
+
 interface PublishExportProps {
   exports: ExportFormats;
   validation?: ValidationResponse;
@@ -66,7 +79,7 @@ interface PublishExportProps {
 export function PublishExport({ exports, validation, sources, onStartNew, selectedDevice = 'garmin', userMode = 'individual', workout }: PublishExportProps) {
   const { user: clerkUser } = useClerkUser();
   const profileId = clerkUser?.id || '';
-  
+
   const [copiedFormat, setCopiedFormat] = useState<string | null>(null);
   const [scheduledDates, setScheduledDates] = useState<Date[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -78,10 +91,37 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
   const [showWorkoutSelector, setShowWorkoutSelector] = useState(false);
   const [isAddingToStrava, setIsAddingToStrava] = useState(false);
   const [isDownloadingFit, setIsDownloadingFit] = useState(false);
+  const [fitMetadata, setFitMetadata] = useState<FitMetadata | null>(null);
+  const [useLapButton, setUseLapButton] = useState(false);
   const stravaConnected = isAccountConnectedSync('strava');
   const selectedDevices = clerkUser?.selectedDevices || [];
   const hasGarminUsb = Array.isArray(selectedDevices) && selectedDevices.includes('garmin_usb');
   console.log('DEBUG PublishExport hasGarminUsb =', hasGarminUsb);
+
+  // Fetch FIT metadata when workout or lap button setting changes
+  useEffect(() => {
+    const fetchFitMetadata = async () => {
+      if (!workout) return;
+
+      try {
+        const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+        const res = await fetch(`${MAPPER_API_BASE_URL}/map/fit-metadata?use_lap_button=${useLapButton}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blocks_json: workout }),
+        });
+
+        if (res.ok) {
+          const metadata = await res.json();
+          setFitMetadata(metadata);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch FIT metadata:', error);
+      }
+    };
+
+    fetchFitMetadata();
+  }, [workout, useLapButton]);
 
   const copyToClipboard = async (text: string, format: string) => {
     try {
@@ -240,14 +280,13 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
         (workout && (workout.title || (workout as any).name)) ||
         'AmakaFlow Workout';
 
-      const res = await fetch('http://localhost:8001/map/to-fit', {
+      const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+      const res = await fetch(`${MAPPER_API_BASE_URL}/map/to-fit?use_lap_button=${useLapButton}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ blocks_json: workout,
-          
-        }),
+        body: JSON.stringify({ blocks_json: workout }),
       });
 
       if (!res.ok) {
@@ -514,6 +553,87 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
                 <div className="text-sm text-muted-foreground">Unmapped</div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Garmin Export Type Info */}
+      {fitMetadata && (selectedDevice === 'garmin' || selectedDevice === 'garmin_usb') && (
+        <Card className={fitMetadata.warnings.length > 0 ? 'border-amber-500/50' : ''}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Info className="w-4 h-4" />
+              Garmin Export Type
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Sport type badge */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">Export as:</span>
+              <Badge variant={fitMetadata.detected_sport === 'cardio' ? 'default' : 'secondary'} className="capitalize">
+                {fitMetadata.detected_sport === 'cardio' ? (
+                  <Timer className="w-3 h-3 mr-1" />
+                ) : (
+                  <Dumbbell className="w-3 h-3 mr-1" />
+                )}
+                {fitMetadata.detected_sport}
+              </Badge>
+            </div>
+
+            {/* Exercise type breakdown */}
+            <div className="flex gap-2 flex-wrap">
+              {fitMetadata.has_strength && (
+                <Badge variant="outline" className="text-xs">
+                  <Dumbbell className="w-3 h-3 mr-1" />
+                  Strength
+                </Badge>
+              )}
+              {fitMetadata.has_running && (
+                <Badge variant="outline" className="text-xs">
+                  🏃 Running
+                </Badge>
+              )}
+              {fitMetadata.has_cardio && (
+                <Badge variant="outline" className="text-xs">
+                  <Timer className="w-3 h-3 mr-1" />
+                  Cardio machines
+                </Badge>
+              )}
+            </div>
+
+            {/* Lap Button Toggle */}
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium">Use Lap Button</span>
+                  {useLapButton && (
+                    <Badge variant="default" className="text-xs">Active</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Press lap button when done with each exercise instead of counting reps/distance.
+                  Recommended for conditioning workouts.
+                </p>
+              </div>
+              <Switch
+                checked={useLapButton}
+                onCheckedChange={setUseLapButton}
+              />
+            </div>
+
+            {/* Warnings */}
+            {fitMetadata.warnings.length > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3 mt-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-amber-700 dark:text-amber-400">
+                    {fitMetadata.warnings.map((warning, idx) => (
+                      <p key={idx}>{warning}</p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
