@@ -36,6 +36,11 @@ interface ValidateMapProps {
   selectedDevice: DeviceId;
 }
 
+// Extended type with sort order
+interface ValidationResultWithOrder extends ValidationResult {
+  _sortOrder?: number;
+}
+
 export function ValidateMap({
   validation,
   workout,
@@ -44,43 +49,27 @@ export function ValidateMap({
   loading,
   selectedDevice
 }: ValidateMapProps) {
-  const [localValidation, setLocalValidation] = useState(validation);
+  // Initialize validation with sort order added to each exercise
+  const [localValidation, setLocalValidation] = useState<ValidationResponse>(() => {
+    let globalIndex = 0;
+    const addSortOrder = (exercises: ValidationResult[]): ValidationResultWithOrder[] =>
+      exercises.map(ex => ({ ...ex, _sortOrder: globalIndex++ } as ValidationResultWithOrder));
+
+    return {
+      ...validation,
+      validated_exercises: addSortOrder(validation.validated_exercises),
+      needs_review: addSortOrder(validation.needs_review),
+      unmapped_exercises: addSortOrder(validation.unmapped_exercises),
+    };
+  });
   const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set());
   const [confirmedMappings, setConfirmedMappings] = useState<Set<string>>(new Set());
 
-  // Store original order of all exercises for maintaining position when moving between categories
-  // This creates a stable order based on the initial validation response
-  const [originalOrder] = useState<Map<string, number>>(() => {
-    const orderMap = new Map<string, number>();
-    const allExercises = [
-      ...validation.validated_exercises,
-      ...validation.needs_review,
-      ...validation.unmapped_exercises
-    ];
-    // Use location + original_name as key since same exercise can appear multiple times
-    allExercises.forEach((ex, idx) => {
-      const key = `${ex.location}-${ex.original_name}-${idx}`;
-      orderMap.set(key, idx);
-    });
-    return orderMap;
-  });
-
-  // Helper to get sort key for an exercise
-  const getExerciseSortKey = (ex: ValidationResult, fallbackIdx: number): number => {
-    // Try to find by location + name pattern
-    for (const [key, order] of originalOrder.entries()) {
-      if (key.startsWith(`${ex.location}-${ex.original_name}-`)) {
-        return order;
-      }
-    }
-    return fallbackIdx + 1000; // Put unknowns at end
-  };
-
-  // Helper function to sort exercises by their original order
-  const sortByOriginalOrder = (exercises: ValidationResult[]): ValidationResult[] => {
+  // Helper function to sort exercises by their original order (uses _sortOrder property)
+  const sortByOriginalOrder = (exercises: ValidationResultWithOrder[]): ValidationResultWithOrder[] => {
     return [...exercises].sort((a, b) => {
-      const orderA = getExerciseSortKey(a, 0);
-      const orderB = getExerciseSortKey(b, 0);
+      const orderA = a._sortOrder ?? Infinity;
+      const orderB = b._sortOrder ?? Infinity;
       return orderA - orderB;
     });
   };
