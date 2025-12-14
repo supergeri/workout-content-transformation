@@ -828,12 +828,23 @@ export default function App() {
     setExports(historyItem.exports || null); // Restore exports
     setIsEditingFromHistory(true); // Mark as editing from history (for saving updates)
     setEditingWorkoutId(historyItem.id); // Store the workout ID for saving
-    // Go directly to export step if we have exports, otherwise to structure
-    if (historyItem.exports) {
+
+    // Determine which step to go to based on saved state
+    // Priority: Export (if complete) → Validate (if incomplete) → Structure
+    const validation = historyItem.validation;
+    const hasCompleteValidation = validation &&
+      (validation.validated_exercises?.length > 0) &&
+      (!validation.needs_review || validation.needs_review.length === 0) &&
+      (!validation.unmapped_exercises || validation.unmapped_exercises.length === 0);
+
+    if (historyItem.exports || hasCompleteValidation) {
+      // Go to export if we have exports OR if validation is complete
       setCurrentStep('export');
-    } else if (historyItem.validation) {
+    } else if (validation) {
+      // Go to validate if we have incomplete validation
       setCurrentStep('validate');
     } else {
+      // Fall back to structure
       setCurrentStep('structure');
     }
     setCurrentView('workflow');
