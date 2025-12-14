@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 import { Repeat, Timer, Dumbbell, Eye, Loader2 } from 'lucide-react';
-import { WorkoutStructure } from '../types/workout';
+import { WorkoutStructure, ValidationResponse } from '../types/workout';
+import { applyValidationMappings } from '../lib/workout-utils';
 
 interface FitPreviewModalProps {
   workout: WorkoutStructure;
+  validation?: ValidationResponse | null;
   trigger?: React.ReactNode;
   useLapButton?: boolean;
 }
@@ -25,7 +27,7 @@ interface BackendPreviewStep {
   repeat_count?: number;
 }
 
-export function FitPreviewModal({ workout, trigger, useLapButton = false }: FitPreviewModalProps) {
+export function FitPreviewModal({ workout, validation, trigger, useLapButton = false }: FitPreviewModalProps) {
   const [open, setOpen] = useState(false);
   const [steps, setSteps] = useState<BackendPreviewStep[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,10 +43,12 @@ export function FitPreviewModal({ workout, trigger, useLapButton = false }: FitP
 
       try {
         const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+        // Apply validation mappings to use user-confirmed Garmin names
+        const mappedWorkout = applyValidationMappings(workout, validation);
         const res = await fetch(`${MAPPER_API_BASE_URL}/map/preview-steps?use_lap_button=${useLapButton}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ blocks_json: workout }),
+          body: JSON.stringify({ blocks_json: mappedWorkout }),
         });
 
         if (!res.ok) {
@@ -64,7 +68,7 @@ export function FitPreviewModal({ workout, trigger, useLapButton = false }: FitP
     };
 
     fetchPreviewSteps();
-  }, [open, workout, useLapButton]);
+  }, [open, workout, validation, useLapButton]);
 
   const defaultTrigger = (
     <Button variant="outline" size="sm">

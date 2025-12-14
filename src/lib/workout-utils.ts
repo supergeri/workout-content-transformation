@@ -1,4 +1,4 @@
-import { Block, Exercise, WorkoutStructure, Superset } from '../types/workout';
+import { Block, Exercise, WorkoutStructure, Superset, ValidationResponse } from '../types/workout';
 
 /**
  * Generate a unique ID for blocks and exercises
@@ -370,4 +370,67 @@ function formatExerciseForStrava(exercise: Exercise, index: number, inSuperset: 
   return parts.join(' • ');
 }
 
+/**
+ * Apply validation mappings to workout exercise names.
+ *
+ * When a user confirms Garmin mappings (e.g., "Ski" -> "Ski Moguls"),
+ * those mappings are stored in the validation object. When exporting
+ * to FIT, we need to use the mapped_to names so the backend doesn't
+ * re-lookup and potentially change the user's selections.
+ *
+ * @param workout - The workout structure with original exercise names
+ * @param validation - The validation response with mapped_to values
+ * @returns A new workout with exercise names replaced by their mapped_to values
+ */
+export function applyValidationMappings(
+  workout: WorkoutStructure,
+  validation?: ValidationResponse | null
+): WorkoutStructure {
+  if (!validation || !workout?.blocks) {
+    return workout;
+  }
 
+  // Build a lookup map from location -> mapped_to name
+  // Location format: "exercises[N]" or "supersets[N].exercises[M]"
+  const mappingsByLocation = new Map<string, string>();
+
+  // Include all validated exercises (they have confirmed mapped_to values)
+  for (const result of validation.validated_exercises || []) {
+    if (result.mapped_to && result.location) {
+      mappingsByLocation.set(result.location, result.mapped_to);
+    }
+  }
+
+  // Also include needs_review items that have a mapped_to value
+  // (even if not confirmed, we want to preserve any existing mapping)
+  for (const result of validation.needs_review || []) {
+    if (result.mapped_to && result.location && !mappingsByLocation.has(result.location)) {
+      mappingsByLocation.set(result.location, result.mapped_to);
+    }
+  }
+
+  if (mappingsByLocation.size === 0) {
+    return workout;
+  }
+
+  // Deep clone and apply mappings
+  return {
+    ...workout,
+    blocks: workout.blocks.map((block, blockIdx) => ({
+      ...block,
+      exercises: (block.exercises || []).map((exercise, exerciseIdx) => {
+        const location = `exercises[${exerciseIdx}]`;
+        const mappedName = mappingsByLocation.get(location);
+        return mappedName ? { ...exercise, name: mappedName } : exercise;
+      }),
+      supersets: (block.supersets || []).map((superset, supersetIdx) => ({
+        ...superset,
+        exercises: (superset.exercises || []).map((exercise, exerciseIdx) => {
+          const location = `supersets[${supersetIdx}].exercises[${exerciseIdx}]`;
+          const mappedName = mappingsByLocation.get(location);
+          return mappedName ? { ...exercise, name: mappedName } : exercise;
+        }),
+      })),
+    })),
+  };
+}

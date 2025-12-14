@@ -53,7 +53,7 @@ import { WorkoutSelector } from './WorkoutSelector';
 import { FollowAlongSetup } from './FollowAlongSetup';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { createStravaActivity, checkAndRefreshStravaToken, StravaTokenExpiredError, StravaUnauthorizedError } from '../lib/strava-api';
-import { formatWorkoutForStrava } from '../lib/workout-utils';
+import { formatWorkoutForStrava, applyValidationMappings } from '../lib/workout-utils';
 import { isAccountConnected } from '../lib/linked-accounts';
 
 interface FitMetadata {
@@ -105,10 +105,12 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
 
       try {
         const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+        // Apply validation mappings to use user-confirmed Garmin names
+        const mappedWorkout = applyValidationMappings(workout, validation);
         const res = await fetch(`${MAPPER_API_BASE_URL}/map/fit-metadata?use_lap_button=${useLapButton}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ blocks_json: workout }),
+          body: JSON.stringify({ blocks_json: mappedWorkout }),
         });
 
         if (res.ok) {
@@ -121,7 +123,7 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
     };
 
     fetchFitMetadata();
-  }, [workout, useLapButton]);
+  }, [workout, useLapButton, validation]);
 
   const copyToClipboard = async (text: string, format: string) => {
     try {
@@ -281,12 +283,14 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
         'AmakaFlow Workout';
 
       const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+      // Apply validation mappings to use user-confirmed Garmin names
+      const mappedWorkout = applyValidationMappings(workout, validation);
       const res = await fetch(`${MAPPER_API_BASE_URL}/map/to-fit?use_lap_button=${useLapButton}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ blocks_json: workout }),
+        body: JSON.stringify({ blocks_json: mappedWorkout }),
       });
 
       if (!res.ok) {
@@ -799,7 +803,7 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
               Copy {deviceExport.format}
             </Button>
             {workout && (
-              <FitPreviewModal workout={workout} />
+              <FitPreviewModal workout={workout} validation={validation} />
             )}
             <Button
               variant="outline"
