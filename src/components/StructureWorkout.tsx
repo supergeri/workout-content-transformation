@@ -16,7 +16,7 @@ import { ExerciseSearch } from './ExerciseSearch';
 import { Badge } from './ui/badge';
 import { addIdsToWorkout, generateId, getStructureDisplayName } from '../lib/workout-utils';
 import { EditExerciseDialog } from './EditExerciseDialog';
-import { EditBlockDialog } from './EditBlockDialog';
+import { EditBlockDialog, BlockUpdates } from './EditBlockDialog';
 
 // ============================================================================
 // Immutable helpers for Workout cloning (Industry-standard: avoid JSON.parse(JSON.stringify))
@@ -1277,7 +1277,7 @@ export function StructureWorkout({
           <EditBlockDialog
             open={editingBlockIdx !== null}
             block={workoutWithIds.blocks[editingBlockIdx]}
-            onSave={(updates) => {
+            onSave={(updates: BlockUpdates) => {
               const newWorkout = cloneWorkout(workoutWithIds);
               const block = newWorkout.blocks[editingBlockIdx];
 
@@ -1286,39 +1286,73 @@ export function StructureWorkout({
                 block.label = updates.label;
               }
 
-              // Apply rest settings to all exercises in the block
-              if (updates.restType !== undefined || updates.restSec !== undefined) {
+              // Helper to update all exercises in block
+              const updateAllExercises = (updateFn: (ex: Exercise) => void) => {
                 // Update block-level exercises
                 if (block.exercises) {
                   block.exercises.forEach(ex => {
-                    if (ex) {
-                      if (updates.restType !== undefined) {
-                        ex.rest_type = updates.restType;
-                      }
-                      if (updates.restSec !== undefined) {
-                        ex.rest_sec = updates.restSec;
-                      }
-                    }
+                    if (ex) updateFn(ex);
                   });
                 }
-
                 // Update superset exercises
                 if (block.supersets) {
                   block.supersets.forEach(ss => {
                     if (ss.exercises) {
                       ss.exercises.forEach(ex => {
-                        if (ex) {
-                          if (updates.restType !== undefined) {
-                            ex.rest_type = updates.restType;
-                          }
-                          if (updates.restSec !== undefined) {
-                            ex.rest_sec = updates.restSec;
-                          }
-                        }
+                        if (ex) updateFn(ex);
                       });
                     }
                   });
                 }
+              };
+
+              // Apply rest settings to all exercises in the block
+              if (updates.restType !== undefined || updates.restSec !== undefined) {
+                updateAllExercises(ex => {
+                  if (updates.restType !== undefined) {
+                    ex.rest_type = updates.restType;
+                  }
+                  if (updates.restSec !== undefined) {
+                    ex.rest_sec = updates.restSec;
+                  }
+                });
+              }
+
+              // Sets: Always apply to all exercises (common bulk operation)
+              if (updates.sets !== undefined && updates.sets !== null) {
+                updateAllExercises(ex => {
+                  ex.sets = updates.sets!;
+                });
+              }
+
+              // Reps: Only apply if toggle was explicitly enabled
+              if (updates.applyReps && updates.reps !== null) {
+                updateAllExercises(ex => {
+                  ex.reps = updates.reps;
+                  // Clear rep range when setting explicit reps
+                  ex.reps_range = null;
+                });
+              }
+
+              // Rep Range: Only apply if toggle was explicitly enabled
+              if (updates.applyRepsRange && updates.repsRange !== null) {
+                updateAllExercises(ex => {
+                  ex.reps_range = updates.repsRange || null;
+                  // Clear explicit reps when setting range
+                  if (updates.repsRange) {
+                    ex.reps = null;
+                  }
+                });
+              }
+
+              // Warm-up configuration (block-level properties)
+              block.warmup_enabled = updates.warmupEnabled ?? false;
+              if (updates.warmupEnabled) {
+                block.warmup_activity = updates.warmupActivity;
+                block.warmup_duration_sec = updates.warmupDurationSec ?? null;
+              } else {
+                block.warmup_activity = undefined;
+                block.warmup_duration_sec = null;
               }
 
               onWorkoutChange(newWorkout);

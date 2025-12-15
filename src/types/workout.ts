@@ -61,7 +61,22 @@ export interface Block {
   rest_between_sec?: number | null;          // Alias for rest_between_rounds_sec
   default_reps_range?: string | null;        // Deprecated
   default_sets?: number | null;             // Deprecated
+
+  // Warm-up configuration (AMA-93)
+  warmup_enabled?: boolean;                   // Whether to include a warm-up step before this block
+  warmup_activity?: WarmupActivity;           // Type of warm-up activity
+  warmup_duration_sec?: number | null;        // Duration of warm-up in seconds
 }
+
+// Warm-up activity types for blocks
+export type WarmupActivity =
+  | 'stretching'
+  | 'jump_rope'
+  | 'air_bike'
+  | 'treadmill'
+  | 'stairmaster'
+  | 'rowing'
+  | 'custom';
 
 // Superset interface - containers within blocks that hold exercises
 export interface Superset {
