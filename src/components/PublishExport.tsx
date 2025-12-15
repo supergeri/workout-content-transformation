@@ -159,10 +159,31 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
 
       const data = await res.json();
       const yaml = data.yaml || '';
-      await navigator.clipboard.writeText(yaml);
-      setCopiedFormat('YAML');
-      toast.success('YAML copied to clipboard');
-      setTimeout(() => setCopiedFormat(null), 2000);
+
+      // Try clipboard API first
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(yaml);
+          setCopiedFormat('YAML');
+          toast.success('YAML copied to clipboard');
+          setTimeout(() => setCopiedFormat(null), 2000);
+          return;
+        }
+      } catch (clipboardErr) {
+        console.warn('copyYaml: Clipboard API failed:', clipboardErr);
+      }
+
+      // Fallback: download as file
+      const blob = new Blob([yaml], { type: 'text/yaml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workout-${Date.now()}.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('YAML downloaded (clipboard not available)');
     } catch (err: any) {
       console.error('copyYaml failed:', err);
       toast.error(`Failed to copy YAML: ${err.message}`);
