@@ -1296,16 +1296,16 @@ export function StructureWorkout({
         {/* Debug JSON Dialog */}
         {showDebugJson && (
           <Dialog open={showDebugJson} onOpenChange={setShowDebugJson}>
-            <DialogContent className="max-w-4xl max-h-[90vh]">
-              <DialogHeader>
+            <DialogContent className="max-w-4xl h-[40vh] flex flex-col">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle>Workout JSON</DialogTitle>
               </DialogHeader>
-              <ScrollArea className="h-[600px]">
+              <ScrollArea className="flex-1 min-h-0">
                 <pre className="text-xs bg-muted p-4 rounded overflow-auto">
                   {JSON.stringify(workoutWithIds, null, 2)}
                 </pre>
               </ScrollArea>
-              <div className="flex justify-end gap-2 mt-4">
+              <div className="flex justify-end gap-2 mt-4 flex-shrink-0">
                 <Button
                   variant="outline"
                   onClick={() => {
