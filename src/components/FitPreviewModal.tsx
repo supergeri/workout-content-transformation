@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
-import { Repeat, Timer, Dumbbell, Eye, Loader2 } from 'lucide-react';
+import { Repeat, Timer, Dumbbell, Eye, Loader2, PlayCircle, Coffee } from 'lucide-react';
 import { WorkoutStructure, ValidationResponse } from '../types/workout';
 import { applyValidationMappings } from '../lib/workout-utils';
 
@@ -14,7 +14,7 @@ interface FitPreviewModalProps {
 
 // Backend preview step format
 interface BackendPreviewStep {
-  type: 'exercise' | 'rest' | 'repeat';
+  type: 'exercise' | 'rest' | 'repeat' | 'warmup';
   display_name: string;
   original_name?: string;
   category_id?: number;
@@ -25,6 +25,66 @@ interface BackendPreviewStep {
   sets?: number;
   rest_seconds?: number;
   repeat_count?: number;
+  duration_step?: number; // For repeat steps - which step to repeat from
+}
+
+// Group flat steps into nested structure like Garmin Connect shows
+interface GroupedStep {
+  type: 'single' | 'repeat-group';
+  step?: BackendPreviewStep;  // For single steps
+  repeatCount?: number;       // For repeat groups (e.g., 4 for "4 Sets")
+  children?: BackendPreviewStep[];  // Steps inside the repeat group
+}
+
+function groupStepsForDisplay(steps: BackendPreviewStep[]): GroupedStep[] {
+  const grouped: GroupedStep[] = [];
+  let i = 0;
+
+  while (i < steps.length) {
+    const step = steps[i];
+
+    // Look ahead for repeat step
+    // Pattern: exercise, [rest], repeat -> group them together
+    if (step.type === 'exercise' || step.type === 'warmup') {
+      const children: BackendPreviewStep[] = [step];
+      let j = i + 1;
+
+      // Collect rest steps until we hit a repeat or another exercise
+      while (j < steps.length && steps[j].type === 'rest') {
+        children.push(steps[j]);
+        j++;
+      }
+
+      // Check if next step is a repeat
+      if (j < steps.length && steps[j].type === 'repeat') {
+        const repeatStep = steps[j];
+        // repeat_count is the number of additional repeats, so total sets = repeat_count + 1
+        const totalSets = (repeatStep.repeat_count || 0) + 1;
+        grouped.push({
+          type: 'repeat-group',
+          repeatCount: totalSets,
+          children: children,
+        });
+        i = j + 1; // Skip past the repeat step
+      } else {
+        // No repeat, just add as single steps
+        children.forEach(child => {
+          grouped.push({ type: 'single', step: child });
+        });
+        i = j;
+      }
+    } else if (step.type === 'repeat') {
+      // Orphan repeat step (shouldn't happen but handle it)
+      grouped.push({ type: 'single', step });
+      i++;
+    } else {
+      // Rest or other step not following an exercise
+      grouped.push({ type: 'single', step });
+      i++;
+    }
+  }
+
+  return grouped;
 }
 
 export function FitPreviewModal({ workout, validation, trigger, useLapButton = false }: FitPreviewModalProps) {
@@ -33,6 +93,9 @@ export function FitPreviewModal({ workout, validation, trigger, useLapButton = f
   const [sportType, setSportType] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Group steps for Garmin-style display
+  const groupedSteps = groupStepsForDisplay(steps);
 
   // Fetch preview steps and sport type from backend when modal opens
   useEffect(() => {
@@ -143,91 +206,235 @@ export function FitPreviewModal({ workout, validation, trigger, useLapButton = f
               <div style={{ textAlign: 'center', color: '#ef4444', padding: '32px 0' }}>
                 {error}
               </div>
-            ) : exerciseSteps.length === 0 ? (
+            ) : groupedSteps.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#666', padding: '32px 0' }}>
-                No exercises found
+                No steps found
               </div>
             ) : (
-              <div style={{ maxHeight: '256px', overflowY: 'auto' }}>
-                {exerciseSteps.map((step, idx) => (
-                  <div key={idx} style={{
-                    borderLeft: '3px solid #3b82f6',
-                    paddingLeft: '12px',
-                    marginBottom: '12px',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderRadius: '0 8px 8px 0',
-                    padding: '8px 8px 8px 12px'
-                  }}>
-                    {/* Exercise name */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Dumbbell style={{ width: '14px', height: '14px', color: '#60a5fa' }} />
-                      <span style={{ color: '#93c5fd', fontSize: '14px', fontWeight: 500 }}>{step.display_name}</span>
-                    </div>
+              <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                {groupedSteps.map((group, groupIdx) => {
+                  // Repeat group - container with children (like Garmin Connect)
+                  if (group.type === 'repeat-group') {
+                    return (
+                      <div key={groupIdx} style={{
+                        border: '1px solid #22c55e',
+                        borderRadius: '8px',
+                        marginBottom: '8px',
+                        overflow: 'hidden'
+                      }}>
+                        {/* Repeat header */}
+                        <div style={{
+                          backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                          padding: '6px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          borderBottom: '1px solid #22c55e'
+                        }}>
+                          <Repeat style={{ width: '14px', height: '14px', color: '#4ade80' }} />
+                          <span style={{ color: '#4ade80', fontSize: '13px', fontWeight: 600 }}>
+                            {group.repeatCount} Sets
+                          </span>
+                        </div>
+                        {/* Children steps inside repeat */}
+                        <div style={{ padding: '8px 8px 0 8px' }}>
+                          {group.children?.map((step, childIdx) => (
+                            <div key={childIdx}>
+                              {step.type === 'exercise' && (
+                                <div style={{
+                                  borderLeft: '3px solid #3b82f6',
+                                  paddingLeft: '12px',
+                                  marginBottom: '8px',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                  borderRadius: '0 8px 8px 0',
+                                  padding: '6px 8px 6px 12px'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Dumbbell style={{ width: '14px', height: '14px', color: '#60a5fa' }} />
+                                    <span style={{ color: '#93c5fd', fontSize: '13px', fontWeight: 500 }}>{step.display_name}</span>
+                                  </div>
+                                  {step.duration_display && (
+                                    <div style={{ marginTop: '4px', marginLeft: '22px' }}>
+                                      <span style={{
+                                        backgroundColor: step.duration_type === 'distance' ? '#059669' :
+                                                       step.duration_type === 'time' ? '#7c3aed' :
+                                                       step.duration_type === 'lap_button' ? '#78350f' : '#1d4ed8',
+                                        color: step.duration_type === 'lap_button' ? '#fbbf24' : 'white',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px'
+                                      }}>
+                                        {step.duration_display}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {step.type === 'rest' && (
+                                <div style={{
+                                  borderLeft: '3px solid #6b7280',
+                                  paddingLeft: '12px',
+                                  marginBottom: '8px',
+                                  backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                                  borderRadius: '0 8px 8px 0',
+                                  padding: '4px 8px 4px 12px'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Coffee style={{ width: '12px', height: '12px', color: '#9ca3af' }} />
+                                    <span style={{ color: '#9ca3af', fontSize: '12px' }}>Rest</span>
+                                    <span style={{
+                                      backgroundColor: step.duration_type === 'lap_button' ? '#78350f' : '#374151',
+                                      color: step.duration_type === 'lap_button' ? '#fbbf24' : '#9ca3af',
+                                      padding: '2px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '10px'
+                                    }}>
+                                      {step.duration_display || 'Lap Button'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
 
-                    {/* Details row */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', marginLeft: '22px', fontSize: '12px' }}>
-                      {/* Duration display from backend */}
+                  // Single step (not in a repeat group)
+                  const step = group.step!;
+
+                  // Warmup step
+                  if (step.type === 'warmup') {
+                    return (
+                      <div key={groupIdx} style={{
+                        borderLeft: '3px solid #f59e0b',
+                        paddingLeft: '12px',
+                        marginBottom: '8px',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderRadius: '0 8px 8px 0',
+                        padding: '6px 8px 6px 12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <PlayCircle style={{ width: '14px', height: '14px', color: '#f59e0b' }} />
+                          <span style={{ color: '#fbbf24', fontSize: '13px', fontWeight: 500 }}>Warmup</span>
+                          {step.duration_display && (
+                            <span style={{
+                              backgroundColor: '#78350f',
+                              color: '#fbbf24',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              marginLeft: 'auto'
+                            }}>
+                              {step.duration_display}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Rest step (standalone, not in repeat)
+                  if (step.type === 'rest') {
+                    return (
+                      <div key={groupIdx} style={{
+                        borderLeft: '3px solid #6b7280',
+                        paddingLeft: '12px',
+                        marginBottom: '8px',
+                        backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                        borderRadius: '0 8px 8px 0',
+                        padding: '4px 8px 4px 12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Coffee style={{ width: '12px', height: '12px', color: '#9ca3af' }} />
+                          <span style={{ color: '#9ca3af', fontSize: '12px' }}>Rest</span>
+                          <span style={{
+                            backgroundColor: step.duration_type === 'lap_button' ? '#78350f' : '#374151',
+                            color: step.duration_type === 'lap_button' ? '#fbbf24' : '#9ca3af',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '10px'
+                          }}>
+                            {step.duration_display || 'Lap Button'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Exercise step (standalone, not in repeat)
+                  return (
+                    <div key={groupIdx} style={{
+                      borderLeft: '3px solid #3b82f6',
+                      paddingLeft: '12px',
+                      marginBottom: '8px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                      borderRadius: '0 8px 8px 0',
+                      padding: '6px 8px 6px 12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Dumbbell style={{ width: '14px', height: '14px', color: '#60a5fa' }} />
+                        <span style={{ color: '#93c5fd', fontSize: '13px', fontWeight: 500 }}>{step.display_name}</span>
+                      </div>
                       {step.duration_display && (
-                        <span style={{
-                          backgroundColor: step.duration_type === 'distance' ? '#059669' :
-                                         step.duration_type === 'time' ? '#7c3aed' :
-                                         step.duration_type === 'lap_button' ? '#f59e0b' : '#1d4ed8',
-                          color: 'white',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px'
-                        }}>
-                          {step.duration_display}
-                        </span>
-                      )}
-
-                      {/* Sets - only if > 1 */}
-                      {step.sets && step.sets > 1 && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#4ade80', fontWeight: 500 }}>
-                          <Repeat style={{ width: '12px', height: '12px' }} />
-                          {step.sets}x
-                        </span>
-                      )}
-
-                      {/* Category badge */}
-                      {step.category_name && (
-                        <span style={{
-                          backgroundColor: '#374151',
-                          color: '#9ca3af',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '10px'
-                        }}>
-                          {step.category_name}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', marginLeft: '22px', fontSize: '11px' }}>
+                          <span style={{
+                            backgroundColor: step.duration_type === 'distance' ? '#059669' :
+                                           step.duration_type === 'time' ? '#7c3aed' :
+                                           step.duration_type === 'lap_button' ? '#78350f' : '#1d4ed8',
+                            color: step.duration_type === 'lap_button' ? '#fbbf24' : 'white',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px'
+                          }}>
+                            {step.duration_display}
+                          </span>
+                          {step.category_name && (
+                            <span style={{
+                              backgroundColor: '#374151',
+                              color: '#9ca3af',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '9px'
+                            }}>
+                              {step.category_name}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* Footer */}
             <div style={{ textAlign: 'center', fontSize: '11px', color: '#666', marginTop: '16px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-              {exerciseSteps.length} exercise{exerciseSteps.length !== 1 ? 's' : ''}
+              {steps.length} step{steps.length !== 1 ? 's' : ''}
+              {' \u2022 '}{exerciseSteps.length} exercise{exerciseSteps.length !== 1 ? 's' : ''}
               {totalSets > exerciseSteps.length && ` \u2022 ${totalSets} total sets`}
             </div>
           </div>
         </div>
 
         {/* Legend */}
-        <div className="flex justify-center gap-6 text-xs text-muted-foreground pt-2">
+        <div className="flex flex-wrap justify-center gap-4 text-xs text-muted-foreground pt-2">
+          <div className="flex items-center gap-1">
+            <PlayCircle className="w-3 h-3 text-amber-500" />
+            <span>Warmup</span>
+          </div>
           <div className="flex items-center gap-1">
             <Dumbbell className="w-3 h-3 text-blue-500" />
             <span>Exercise</span>
           </div>
           <div className="flex items-center gap-1">
-            <Repeat className="w-3 h-3 text-green-500" />
-            <span>Sets</span>
+            <Coffee className="w-3 h-3 text-gray-500" />
+            <span>Rest</span>
           </div>
           <div className="flex items-center gap-1">
-            <Timer className="w-3 h-3 text-gray-500" />
-            <span>Rest</span>
+            <Repeat className="w-3 h-3 text-green-500" />
+            <span>Repeat</span>
           </div>
         </div>
       </DialogContent>
