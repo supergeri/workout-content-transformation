@@ -2,6 +2,85 @@ import { WorkoutStructure } from '../types/workout';
 
 export const workoutTemplates: WorkoutStructure[] = [
   {
+    title: "Full Body Superset Training",
+    source: "template",
+    settings: {
+      defaultRestType: 'timed',
+      defaultRestSec: 60,
+    },
+    blocks: [
+      {
+        label: "Upper Body Supersets",
+        structure: null,
+        exercises: [],
+        supersets: [
+          {
+            id: "ss-upper-1",
+            exercises: [
+              { id: "ex-1", name: "Bench Press", sets: 4, reps: 10, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Chest focus" },
+              { id: "ex-2", name: "Bent Over Row", sets: 4, reps: 10, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Back focus" },
+              { id: "ex-3", name: "Face Pulls", sets: 4, reps: 15, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Rear delts" }
+            ],
+            rounds: 4,
+            rest_between_sec: 90,
+            rest_type: 'timed'
+          },
+          {
+            id: "ss-upper-2",
+            exercises: [
+              { id: "ex-4", name: "Overhead Press", sets: 3, reps: 12, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Shoulders" },
+              { id: "ex-5", name: "Lat Pulldown", sets: 3, reps: 12, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Lats" }
+            ],
+            rounds: 3,
+            rest_between_sec: 60,
+            rest_type: 'timed'
+          }
+        ],
+        rounds: null,
+        sets: null,
+        time_cap_sec: null,
+        time_work_sec: null,
+        time_rest_sec: null,
+        rest_between_rounds_sec: null,
+        rest_between_sets_sec: null
+      },
+      {
+        label: "Lower Body Supersets",
+        structure: null,
+        exercises: [],
+        supersets: [
+          {
+            id: "ss-lower-1",
+            exercises: [
+              { id: "ex-6", name: "Barbell Back Squat", sets: 5, reps: 5, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Heavy compound" },
+              { id: "ex-7", name: "Romanian Deadlift", sets: 5, reps: 8, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Hamstrings" }
+            ],
+            rounds: 5,
+            rest_between_sec: 120,
+            rest_type: 'timed'
+          },
+          {
+            id: "ss-lower-2",
+            exercises: [
+              { id: "ex-8", name: "Walking Lunges", sets: 3, reps: 20, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "10 per leg" },
+              { id: "ex-9", name: "Calf Raises", sets: 3, reps: 15, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Slow tempo" },
+              { id: "ex-10", name: "Leg Curls", sets: 3, reps: 12, type: "strength", reps_range: null, duration_sec: null, rest_sec: null, distance_m: null, distance_range: null, notes: "Machine" }
+            ],
+            rounds: 3,
+            rest_type: 'button'
+          }
+        ],
+        rounds: null,
+        sets: null,
+        time_cap_sec: null,
+        time_work_sec: null,
+        time_rest_sec: null,
+        rest_between_rounds_sec: null,
+        rest_between_sets_sec: null
+      }
+    ]
+  },
+  {
     title: "Hyrox Full Simulation",
     source: "template",
     blocks: [

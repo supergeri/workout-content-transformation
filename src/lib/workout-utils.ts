@@ -16,6 +16,7 @@ export function addIdsToWorkout(workout: WorkoutStructure): WorkoutStructure {
     return {
       title: workout?.title || '',
       source: workout?.source || '',
+      settings: workout?.settings,
       blocks: []
     };
   }

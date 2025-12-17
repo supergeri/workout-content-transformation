@@ -5,6 +5,18 @@ export type RestType = 'timed' | 'button';
 // - 'timed': Countdown timer (e.g., 30s, 60s)
 // - 'button': Wait for user to press lap button when ready
 
+// Workout-level settings (AMA-96)
+// Default rest and warm-up settings that apply to all exercises unless overridden at block level
+export interface WorkoutSettings {
+  defaultRestType: RestType;           // Default rest type for all exercises
+  defaultRestSec: number | null;       // Default rest duration (null for button type)
+  workoutWarmup?: {                    // Optional workout-level warm-up (before first exercise)
+    enabled: boolean;
+    activity: WarmupActivity;
+    durationSec: number;
+  };
+}
+
 export interface Exercise {
   id: string; // Industry-standard: required for stable drag-and-drop
   name: string;
@@ -71,6 +83,14 @@ export interface Block {
   warmup_enabled?: boolean;                   // Whether to include a warm-up step before this block
   warmup_activity?: WarmupActivity;           // Type of warm-up activity
   warmup_duration_sec?: number | null;        // Duration of warm-up in seconds
+
+  // Rest override (AMA-96)
+  // When enabled, overrides workout-level default rest settings for this block
+  restOverride?: {
+    enabled: boolean;
+    restType?: RestType;
+    restSec?: number | null;
+  };
 }
 
 // Warm-up activity types for blocks
@@ -94,6 +114,7 @@ export interface Superset {
 export interface WorkoutStructure {
   title: string;
   source: string;
+  settings?: WorkoutSettings;  // Workout-level defaults (AMA-96)
   blocks: Block[];
 }
 

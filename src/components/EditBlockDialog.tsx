@@ -7,11 +7,13 @@ import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 import { ChevronDown, ChevronUp, Info } from 'lucide-react';
-import { Block, RestType, WarmupActivity } from '../types/workout';
+import { Block, RestType, WarmupActivity, WorkoutSettings } from '../types/workout';
 
 // Updates that can be applied from EditBlockDialog
 export interface BlockUpdates {
   label?: string;
+  // Rest override (AMA-96)
+  restOverrideEnabled?: boolean;
   restType?: RestType;
   restSec?: number | null;
   // Sets/Reps bulk editing
@@ -29,6 +31,7 @@ export interface BlockUpdates {
 interface EditBlockDialogProps {
   open: boolean;
   block: Block | null;
+  workoutSettings?: WorkoutSettings;
   onSave: (updates: BlockUpdates) => void;
   onClose: () => void;
 }
@@ -54,11 +57,12 @@ const WARMUP_ACTIVITIES: { value: WarmupActivity; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-export function EditBlockDialog({ open, block, onSave, onClose }: EditBlockDialogProps) {
+export function EditBlockDialog({ open, block, workoutSettings, onSave, onClose }: EditBlockDialogProps) {
   // Block name
   const [label, setLabel] = useState('');
 
-  // Rest settings
+  // Rest override (AMA-96)
+  const [restOverrideEnabled, setRestOverrideEnabled] = useState(false);
   const [restType, setRestType] = useState<RestType>('timed');
   const [restSec, setRestSec] = useState(0);
 
@@ -94,13 +98,23 @@ export function EditBlockDialog({ open, block, onSave, onClose }: EditBlockDialo
     if (block) {
       setLabel(block.label || '');
 
-      // Get rest type and duration from first exercise (block-level or superset)
-      const firstBlockExercise = block.exercises?.[0];
-      const firstSupersetExercise = block.supersets?.[0]?.exercises?.[0];
-      const firstExercise = firstBlockExercise || firstSupersetExercise;
+      // Rest override (AMA-96)
+      // Check if block has rest override enabled
+      const hasRestOverride = block.restOverride?.enabled ?? false;
+      setRestOverrideEnabled(hasRestOverride);
 
-      setRestType(firstExercise?.rest_type || block.rest_type || 'timed');
-      setRestSec(firstExercise?.rest_sec ?? 0);
+      // Initialize rest type/sec from block override if enabled, otherwise from exercises
+      if (hasRestOverride && block.restOverride) {
+        setRestType(block.restOverride.restType || 'timed');
+        setRestSec(block.restOverride.restSec ?? 0);
+      } else {
+        // Fallback to first exercise settings for display when override is enabled
+        const firstBlockExercise = block.exercises?.[0];
+        const firstSupersetExercise = block.supersets?.[0]?.exercises?.[0];
+        const firstExercise = firstBlockExercise || firstSupersetExercise;
+        setRestType(firstExercise?.rest_type || block.rest_type || 'timed');
+        setRestSec(firstExercise?.rest_sec ?? 30);
+      }
 
       // Get common sets value (if all exercises have same sets)
       const allExercises = getAllExercises();
@@ -139,8 +153,10 @@ export function EditBlockDialog({ open, block, onSave, onClose }: EditBlockDialo
   const handleSave = () => {
     onSave({
       label,
-      restType,
-      restSec: restType === 'button' ? null : restSec,
+      // Rest override (AMA-96)
+      restOverrideEnabled,
+      restType: restOverrideEnabled ? restType : undefined,
+      restSec: restOverrideEnabled ? (restType === 'button' ? null : restSec) : undefined,
       // Sets always applies (common bulk operation)
       sets,
       // Reps only applies if toggle is on
@@ -290,63 +306,88 @@ export function EditBlockDialog({ open, block, onSave, onClose }: EditBlockDialo
             </p>
           </div>
 
-          {/* Rest After Exercise (applies to all) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Rest After Exercise</Label>
-              <Select
-                value={restType}
-                onValueChange={(value: RestType) => setRestType(value)}
-              >
-                <SelectTrigger className="w-36 h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="timed">Timed</SelectItem>
-                  <SelectItem value="button">Lap Button</SelectItem>
-                </SelectContent>
-              </Select>
+          {/* Rest Override (AMA-96) */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={restOverrideEnabled}
+                  onCheckedChange={setRestOverrideEnabled}
+                />
+                <span className="text-sm font-medium">Override Rest Settings</span>
+              </div>
             </div>
 
-            {restType === 'timed' ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Duration</span>
-                  <span className="text-sm font-medium">{formatDuration(restSec)}</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-muted-foreground w-8">0s</span>
-                  <Slider
-                    value={[restSec]}
-                    onValueChange={(values) => setRestSec(values[0])}
-                    min={0}
-                    max={300}
-                    step={5}
-                    className="flex-1"
-                  />
-                  <span className="text-xs text-muted-foreground w-8 text-right">5m</span>
-                  <Input
-                    type="number"
-                    value={restSec}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 0;
-                      setRestSec(Math.max(0, Math.min(600, val)));
-                    }}
-                    className="w-20 h-9 text-center"
-                    min={0}
-                    max={600}
-                    placeholder="sec"
-                  />
-                </div>
+            {!restOverrideEnabled ? (
+              <div className="p-3 pt-0 border-t">
+                <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md flex items-center gap-2">
+                  <Info className="w-4 h-4 shrink-0" />
+                  Using workout default: {workoutSettings?.defaultRestType === 'button'
+                    ? 'Lap Button'
+                    : workoutSettings?.defaultRestSec
+                      ? `Timed ${formatDuration(workoutSettings.defaultRestSec)}`
+                      : 'Lap Button'}
+                </p>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-                Press lap button when ready to continue to next exercise
-              </p>
+              <div className="p-3 pt-0 space-y-3 border-t">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">Rest After Exercise</Label>
+                  <Select
+                    value={restType}
+                    onValueChange={(value: RestType) => setRestType(value)}
+                  >
+                    <SelectTrigger className="w-36 h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="timed">Timed</SelectItem>
+                      <SelectItem value="button">Lap Button</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {restType === 'timed' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Duration</span>
+                      <span className="text-sm font-medium">{formatDuration(restSec)}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs text-muted-foreground w-8">0s</span>
+                      <Slider
+                        value={[restSec]}
+                        onValueChange={(values) => setRestSec(values[0])}
+                        min={0}
+                        max={300}
+                        step={5}
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-muted-foreground w-8 text-right">5m</span>
+                      <Input
+                        type="number"
+                        value={restSec}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          setRestSec(Math.max(0, Math.min(600, val)));
+                        }}
+                        className="w-20 h-9 text-center"
+                        min={0}
+                        max={600}
+                        placeholder="sec"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                    Press lap button when ready to continue to next exercise
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
-          {/* Warm-Up Configuration (collapsible) */}
+          {/* Block Warm-Up Configuration (collapsible) */}
           <div className="border rounded-lg overflow-hidden">
             <div className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
               <div className="flex items-center gap-3">
@@ -361,7 +402,7 @@ export function EditBlockDialog({ open, block, onSave, onClose }: EditBlockDialo
                   className="text-sm font-medium cursor-pointer select-none"
                   onClick={() => setShowWarmup(!showWarmup)}
                 >
-                  Include Warm-Up
+                  Block Warm-Up
                 </span>
               </div>
               <button
@@ -433,7 +474,7 @@ export function EditBlockDialog({ open, block, onSave, onClose }: EditBlockDialo
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  Warm-up will be added before the first exercise in this block
+                  Warm-up activity before the first exercise in this block
                 </p>
               </div>
             )}

@@ -62,6 +62,7 @@ export function normalizeWorkoutStructure(workout: WorkoutStructure): WorkoutStr
     }
 
     const normalizedBlock: Block = {
+      ...block, // Preserve all existing block properties (AMA-96: restOverride, AMA-93: warmup)
       label: blockLabel,
       structure: structure || null,
       exercises: exercises,

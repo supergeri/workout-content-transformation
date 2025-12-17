@@ -1,22 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { Watch, Bike, Wand2, ShieldCheck, Edit2, Check, X, Trash2, GripVertical, Plus, Layers, Move, ChevronDown, ChevronUp, Minimize2, Maximize2, Save, Code, Download, Send, Info, Clock } from 'lucide-react';
+import { Watch, Bike, Wand2, ShieldCheck, Edit2, Check, Trash2, GripVertical, Plus, Layers, Move, ChevronDown, ChevronUp, Minimize2, Maximize2, Save, Code, Download, Send, Info, Clock, Copy } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Alert, AlertDescription } from './ui/alert';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { WorkoutStructure, Exercise, Block, Superset, RestType } from '../types/workout';
+import { WorkoutStructure, Exercise, Block, Superset, RestType, WorkoutSettings } from '../types/workout';
 import { DeviceId, getDevicesByIds, getDeviceById, Device, getPrimaryExportDestinations } from '../lib/devices';
 import { ExerciseSearch } from './ExerciseSearch';
 import { Badge } from './ui/badge';
 import { addIdsToWorkout, generateId, getStructureDisplayName } from '../lib/workout-utils';
 import { EditExerciseDialog } from './EditExerciseDialog';
 import { EditBlockDialog, BlockUpdates } from './EditBlockDialog';
+import { WorkoutSettingsDialog } from './WorkoutSettingsDialog';
 
 // ============================================================================
 // Immutable helpers for Workout cloning (Industry-standard: avoid JSON.parse(JSON.stringify))
@@ -248,6 +247,7 @@ function ExerciseDropZone({
 function DraggableBlock({
   block,
   blockIdx,
+  workoutSettings,
   onBlockDrop,
   onExerciseDrop,
   onEditExercise,
@@ -262,6 +262,7 @@ function DraggableBlock({
 }: {
   block: Block;
   blockIdx: number;
+  workoutSettings?: WorkoutSettings;
   onBlockDrop: (draggedIdx: number, targetIdx: number) => void;
   onExerciseDrop: (item: DraggableExerciseData, targetIdx: number) => void;
   onEditExercise: (exerciseIdx: number, supersetIdx?: number) => void;
@@ -298,17 +299,34 @@ function DraggableBlock({
   }));
 
   const [isCollapsed, setIsCollapsed] = useState(true);
+  // Track collapsed state per superset (keyed by superset index)
+  const [collapsedSupersets, setCollapsedSupersets] = useState<Record<number, boolean>>({});
+
+  const toggleSupersetCollapse = (supersetIdx: number) => {
+    setCollapsedSupersets(prev => ({
+      ...prev,
+      [supersetIdx]: !prev[supersetIdx]
+    }));
+  };
 
   // React to collapse/expand all signal
   useEffect(() => {
     if (collapseSignal) {
       if (collapseSignal.action === 'collapse') {
         setIsCollapsed(true);
+        // Collapse all supersets
+        const allCollapsed: Record<number, boolean> = {};
+        (block.supersets || []).forEach((_, idx) => {
+          allCollapsed[idx] = true;
+        });
+        setCollapsedSupersets(allCollapsed);
       } else if (collapseSignal.action === 'expand') {
         setIsCollapsed(false);
+        // Expand all supersets
+        setCollapsedSupersets({});
       }
     }
-  }, [collapseSignal]);
+  }, [collapseSignal, block.supersets]);
 
   // Count total exercises in block (including supersets)
   const blockExercises = block.exercises?.length || 0;
@@ -388,9 +406,36 @@ function DraggableBlock({
                   </Badge>
                 )}
               </div>
-              {block.structure && (
-                <Badge variant="outline">{getStructureDisplayName(block.structure)}</Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {block.structure && (
+                  <Badge variant="outline">{getStructureDisplayName(block.structure)}</Badge>
+                )}
+                {/* Rest indicator - shows effective rest (override or workout default) */}
+                <Badge variant={block.restOverride?.enabled ? "secondary" : "outline"} className="text-xs gap-1">
+                  <Clock className="w-3 h-3" />
+                  {(() => {
+                    // Use block override if enabled, otherwise workout default
+                    const restType = block.restOverride?.enabled
+                      ? block.restOverride.restType
+                      : workoutSettings?.defaultRestType || 'button';
+                    const restSec = block.restOverride?.enabled
+                      ? block.restOverride.restSec
+                      : workoutSettings?.defaultRestSec;
+
+                    if (restType === 'button') {
+                      return 'Lap Button';
+                    }
+                    if (restSec) {
+                      const mins = Math.floor(restSec / 60);
+                      const secs = restSec % 60;
+                      if (mins > 0 && secs > 0) return `${mins}m ${secs}s rest`;
+                      if (mins > 0) return `${mins}m rest`;
+                      return `${secs}s rest`;
+                    }
+                    return 'Lap Button';
+                  })()}
+                </Badge>
+              </div>
             </div>
             {!isCollapsed && getStructureInfo().length > 0 && (
               <div className="flex gap-4 text-xs text-muted-foreground mt-2">
@@ -441,57 +486,131 @@ function DraggableBlock({
               {/* Supersets */}
               {(block.supersets || []).length > 0 && (
                 <div className="space-y-3">
-                  {(block.supersets || []).map((superset, supersetIdx) => (
-                    <div key={superset.id || supersetIdx} className="border-l-4 border-primary pl-4 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            Superset {supersetIdx + 1}
-                          </Badge>
-                          {superset.rest_between_sec && (
-                            <span className="text-xs text-muted-foreground">
-                              {superset.rest_between_sec}s rest
-                            </span>
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onDeleteSuperset(supersetIdx)}
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                  {(block.supersets || []).map((superset, supersetIdx) => {
+                    const isSupersetCollapsed = collapsedSupersets[supersetIdx] ?? false;
+                    const exerciseCount = superset.exercises?.length || 0;
+
+                    // Build summary info for collapsed view
+                    const getSupersetSummary = () => {
+                      const parts: string[] = [];
+                      parts.push(`${exerciseCount} exercise${exerciseCount !== 1 ? 's' : ''}`);
+
+                      // Show rounds if set
+                      if (superset.rounds && superset.rounds > 1) {
+                        parts.push(`${superset.rounds} rounds`);
+                      }
+
+                      // Show rest type
+                      if (superset.rest_type === 'button') {
+                        parts.push('Lap Button');
+                      } else if (superset.rest_between_sec) {
+                        const mins = Math.floor(superset.rest_between_sec / 60);
+                        const secs = superset.rest_between_sec % 60;
+                        if (mins > 0 && secs > 0) parts.push(`${mins}m ${secs}s rest`);
+                        else if (mins > 0) parts.push(`${mins}m rest`);
+                        else parts.push(`${secs}s rest`);
+                      }
+
+                      return parts.join(' • ');
+                    };
+
+                    return (
+                      <div key={superset.id || supersetIdx} className="border-l-4 border-primary pl-4 space-y-2">
+                        <div
+                          className="flex items-center justify-between cursor-pointer hover:bg-muted/50 -ml-4 pl-4 py-1 rounded-r transition-colors"
+                          onClick={() => toggleSupersetCollapse(supersetIdx)}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="p-0 h-auto hover:bg-transparent"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSupersetCollapse(supersetIdx);
+                              }}
+                            >
+                              {isSupersetCollapsed ? (
+                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                              )}
+                            </Button>
+                            <Badge variant="outline" className="text-xs">
+                              Superset {supersetIdx + 1}
+                            </Badge>
+                            {/* Show summary when collapsed */}
+                            {isSupersetCollapsed && (
+                              <span className="text-xs text-muted-foreground">
+                                {getSupersetSummary()}
+                              </span>
+                            )}
+                            {/* Show superset-specific rest when expanded */}
+                            {!isSupersetCollapsed && (superset.rest_between_sec || superset.rest_type) && (
+                              <Badge variant="secondary" className="text-xs gap-1">
+                                <Clock className="w-3 h-3" />
+                                {superset.rest_type === 'button'
+                                  ? 'Lap Button'
+                                  : superset.rest_between_sec
+                                    ? (() => {
+                                        const mins = Math.floor(superset.rest_between_sec / 60);
+                                        const secs = superset.rest_between_sec % 60;
+                                        if (mins > 0 && secs > 0) return `${mins}m ${secs}s`;
+                                        if (mins > 0) return `${mins}m`;
+                                        return `${secs}s`;
+                                      })()
+                                    : 'Lap Button'}
+                              </Badge>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteSuperset(supersetIdx);
+                            }}
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+
+                        {/* Exercises and Add button - only show when expanded */}
+                        {!isSupersetCollapsed && (
+                          <>
+                            <ExerciseDropZone
+                              blockIdx={blockIdx}
+                              exercises={superset.exercises || []}
+                              onDrop={(item, targetIdx) => {
+                                // Handle drop into superset - pass supersetIdx to handleExerciseDrop
+                                onExerciseDrop(item, targetIdx, supersetIdx);
+                              }}
+                              onEdit={(idx) => {
+                                // Edit exercise in superset - pass supersetIdx
+                                onEditExercise(idx, supersetIdx);
+                              }}
+                              onDelete={(idx) => {
+                                // Delete exercise from superset - pass supersetIdx
+                                onDeleteExercise(idx, supersetIdx);
+                              }}
+                              label={`Superset ${supersetIdx + 1} Exercises`}
+                              supersetIdx={supersetIdx}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => onAddExerciseToSuperset(supersetIdx)}
+                              className="w-full gap-2"
+                            >
+                              <Plus className="w-4 h-4" />
+                              Add Exercise to Superset
+                            </Button>
+                          </>
+                        )}
                       </div>
-                      <ExerciseDropZone
-                        blockIdx={blockIdx}
-                        exercises={superset.exercises || []}
-                        onDrop={(item, targetIdx) => {
-                          // Handle drop into superset - pass supersetIdx to handleExerciseDrop
-                          onExerciseDrop(item, targetIdx, supersetIdx);
-                        }}
-                        onEdit={(idx) => {
-                          // Edit exercise in superset - pass supersetIdx
-                          onEditExercise(idx, supersetIdx);
-                        }}
-                        onDelete={(idx) => {
-                          // Delete exercise from superset - pass supersetIdx
-                          onDeleteExercise(idx, supersetIdx);
-                        }}
-                        label={`Superset ${supersetIdx + 1} Exercises`}
-                        supersetIdx={supersetIdx}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onAddExerciseToSuperset(supersetIdx)}
-                        className="w-full gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Exercise to Superset
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -605,6 +724,7 @@ export function StructureWorkout({
       return {
         title: workout?.title || '',
         source: workout?.source || '',
+        settings: workout?.settings,
         blocks: []
       };
     }
@@ -626,6 +746,8 @@ export function StructureWorkout({
     workout?.blocks?.length || 0,
     workout?.title || '',
     workout?.source || '',
+    // Include settings to detect workout-level changes (AMA-96)
+    JSON.stringify(workout?.settings || {}),
     // Include block labels to detect changes
     workout?.blocks?.map(b => b?.label || '').join('|') || '',
     // Stringify block IDs to detect actual changes (with null checks)
@@ -636,44 +758,31 @@ export function StructureWorkout({
     // Include exercise names to detect when new exercises are added
     workout?.blocks?.map(b => b?.exercises?.map(e => e?.name || '').join(',') || '').join('|') || '',
     workout?.blocks?.map(b => b?.supersets?.map(ss => ss?.exercises?.map(e => e?.name || '').join(',') || '').join('|') || '').join('||') || '',
-    // Include exercise properties to detect changes to distance, duration, reps, warmup, etc.
+    // Include exercise properties to detect changes to distance, duration, reps, warmup, rest, etc.
     workout?.blocks?.map(b =>
       b?.exercises?.map(e =>
-        `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.notes || ''}|${e?.warmup_sets || ''}|${e?.warmup_reps || ''}`
+        `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.rest_type || ''}|${e?.notes || ''}|${e?.warmup_sets || ''}|${e?.warmup_reps || ''}`
       ).join('||') || ''
     ).join('|||') || '',
     workout?.blocks?.map(b =>
       b?.supersets?.map(ss =>
         ss?.exercises?.map(e =>
-          `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.notes || ''}|${e?.warmup_sets || ''}|${e?.warmup_reps || ''}`
+          `${e?.name || ''}|${e?.sets || ''}|${e?.reps || ''}|${e?.reps_range || ''}|${e?.duration_sec || ''}|${e?.distance_m || ''}|${e?.distance_range || ''}|${e?.rest_sec || ''}|${e?.rest_type || ''}|${e?.notes || ''}|${e?.warmup_sets || ''}|${e?.warmup_reps || ''}`
         ).join('||') || ''
       ).join('|||') || ''
     ).join('||||') || ''
   ]);
 
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [tempTitle, setTempTitle] = useState(workoutWithIds.title);
-  
-  // Sync tempTitle when workout title changes externally
-  useEffect(() => {
-    if (!editingTitle) {
-      setTempTitle(workoutWithIds.title);
-    }
-  }, [workoutWithIds.title, editingTitle]);
+  const [showWorkoutSettings, setShowWorkoutSettings] = useState(false);
   const [editingExercise, setEditingExercise] = useState<{ blockIdx: number; exerciseIdx: number; supersetIdx?: number } | null>(null);
   const [editingBlockIdx, setEditingBlockIdx] = useState<number | null>(null);
   const [showExerciseSearch, setShowExerciseSearch] = useState(false);
   const [addingToBlock, setAddingToBlock] = useState<number | null>(null);
   const [addingToSuperset, setAddingToSuperset] = useState<{ blockIdx: number; supersetIdx: number } | null>(null);
   const [collapseSignal, setCollapseSignal] = useState<{ action: 'collapse' | 'expand'; timestamp: number } | undefined>(undefined);
-  const [showDebugJson, setShowDebugJson] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
 
   const availableDevices = getDevicesByIds(userSelectedDevices);
-
-  const saveTitle = () => {
-    onWorkoutChange({ ...workoutWithIds, title: tempTitle });
-    setEditingTitle(false);
-  };
 
   // Handle block drag and drop
   const handleBlockDrop = (draggedIdx: number, targetIdx: number) => {
@@ -973,6 +1082,30 @@ export function StructureWorkout({
     onWorkoutChange(newWorkout);
   };
 
+  // Handle workout-level settings changes (AMA-96)
+  const handleWorkoutSettingsSave = (title: string, settings: WorkoutSettings) => {
+    const newWorkout = cloneWorkout(workoutWithIds);
+    newWorkout.title = title;
+    newWorkout.settings = settings;
+    onWorkoutChange(newWorkout);
+  };
+
+  // Helper to format rest settings for display
+  const getRestSettingsLabel = () => {
+    const settings = workoutWithIds.settings;
+    if (!settings || settings.defaultRestType === 'button') {
+      return 'Lap Button';
+    }
+    if (settings.defaultRestType === 'timed' && settings.defaultRestSec) {
+      const mins = Math.floor(settings.defaultRestSec / 60);
+      const secs = settings.defaultRestSec % 60;
+      if (mins > 0 && secs > 0) return `${mins}m ${secs}s rest`;
+      if (mins > 0) return `${mins}m rest`;
+      return `${secs}s rest`;
+    }
+    return 'Lap Button';
+  };
+
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="space-y-6">
@@ -980,29 +1113,26 @@ export function StructureWorkout({
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex-1">
-                {editingTitle ? (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={tempTitle}
-                      onChange={(e) => setTempTitle(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
-                      className="max-w-md"
-                    />
-                    <Button size="sm" onClick={saveTitle}>
-                      <Check className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingTitle(false)}>
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <CardTitle>{workoutWithIds.title || 'Untitled Workout'}</CardTitle>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingTitle(true)}>
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <CardTitle>{workoutWithIds.title || 'Untitled Workout'}</CardTitle>
+                  <Button size="sm" variant="ghost" onClick={() => setShowWorkoutSettings(true)} title="Workout Settings">
+                    <Edit2 className="w-4 h-4" />
+                  </Button>
+                </div>
+                {/* Workout Settings Badges */}
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="outline" className="text-xs gap-1">
+                    <Clock className="w-3 h-3" />
+                    {getRestSettingsLabel()}
+                  </Badge>
+                  {workoutWithIds.settings?.workoutWarmup?.enabled && (
+                    <Badge variant="outline" className="text-xs">
+                      Warm-up: {workoutWithIds.settings.workoutWarmup.activity === 'custom'
+                        ? 'Custom'
+                        : workoutWithIds.settings.workoutWarmup.activity?.replace('_', ' ')}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -1162,9 +1292,17 @@ export function StructureWorkout({
                 }
               })()}
               {process.env.NODE_ENV === 'development' && (
-                <Button onClick={() => setShowDebugJson(true)} variant="outline" className="gap-2">
-                  <Code className="w-4 h-4" />
-                  Debug JSON
+                <Button
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(workoutWithIds, null, 2));
+                    setJsonCopied(true);
+                    setTimeout(() => setJsonCopied(false), 2000);
+                  }}
+                  variant="outline"
+                  className="gap-2"
+                >
+                  {jsonCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {jsonCopied ? 'Copied!' : 'Copy JSON'}
                 </Button>
               )}
             </div>
@@ -1214,6 +1352,7 @@ export function StructureWorkout({
                   key={block.id || blockIdx}
                   block={block}
                   blockIdx={blockIdx}
+                  workoutSettings={workoutWithIds.settings}
                   onBlockDrop={handleBlockDrop}
                   onExerciseDrop={(item, targetIdx, targetSupersetIdx) => handleExerciseDrop(item, blockIdx, targetIdx, targetSupersetIdx)}
                   onEditExercise={(exerciseIdx, supersetIdx) => setEditingExercise({ blockIdx, exerciseIdx, supersetIdx })}
@@ -1290,6 +1429,7 @@ export function StructureWorkout({
           <EditBlockDialog
             open={editingBlockIdx !== null}
             block={workoutWithIds.blocks[editingBlockIdx]}
+            workoutSettings={workoutWithIds.settings}
             onSave={(updates: BlockUpdates) => {
               const newWorkout = cloneWorkout(workoutWithIds);
               const block = newWorkout.blocks[editingBlockIdx];
@@ -1319,16 +1459,28 @@ export function StructureWorkout({
                 }
               };
 
-              // Apply rest settings to all exercises in the block
-              if (updates.restType !== undefined || updates.restSec !== undefined) {
-                updateAllExercises(ex => {
-                  if (updates.restType !== undefined) {
-                    ex.rest_type = updates.restType;
-                  }
-                  if (updates.restSec !== undefined) {
-                    ex.rest_sec = updates.restSec;
-                  }
-                });
+              // Rest override (AMA-96)
+              // Store rest override settings at block level
+              if (updates.restOverrideEnabled !== undefined) {
+                if (updates.restOverrideEnabled) {
+                  block.restOverride = {
+                    enabled: true,
+                    restType: updates.restType,
+                    restSec: updates.restSec,
+                  };
+                  // Also apply to exercises for backward compatibility
+                  updateAllExercises(ex => {
+                    if (updates.restType !== undefined) {
+                      ex.rest_type = updates.restType;
+                    }
+                    if (updates.restSec !== undefined) {
+                      ex.rest_sec = updates.restSec;
+                    }
+                  });
+                } else {
+                  // Clear override - exercises will use workout defaults
+                  block.restOverride = undefined;
+                }
               }
 
               // Sets: Always apply to all exercises (common bulk operation)
@@ -1375,35 +1527,15 @@ export function StructureWorkout({
           />
         )}
 
-        {/* Debug JSON Dialog */}
-        {showDebugJson && (
-          <Dialog open={showDebugJson} onOpenChange={setShowDebugJson}>
-            <DialogContent
-              className="flex flex-col"
-              style={{ maxWidth: '56rem', maxHeight: '40vh', overflow: 'hidden' }}
-            >
-              <DialogHeader className="flex-shrink-0">
-                <DialogTitle>Workout JSON</DialogTitle>
-              </DialogHeader>
-              <div className="flex-1 min-h-0 overflow-auto">
-                <pre className="text-xs bg-muted p-4 rounded whitespace-pre-wrap break-all">
-                  {JSON.stringify(workoutWithIds, null, 2)}
-                </pre>
-              </div>
-              <div className="flex justify-end gap-2 pt-4 flex-shrink-0 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(workoutWithIds, null, 2));
-                  }}
-                >
-                  Copy JSON
-                </Button>
-                <Button onClick={() => setShowDebugJson(false)}>Close</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
+        {/* Workout Settings Dialog (AMA-96) */}
+        <WorkoutSettingsDialog
+          open={showWorkoutSettings}
+          title={workoutWithIds.title}
+          settings={workoutWithIds.settings}
+          onSave={handleWorkoutSettingsSave}
+          onClose={() => setShowWorkoutSettings(false)}
+        />
+
       </div>
     </DndProvider>
   );
