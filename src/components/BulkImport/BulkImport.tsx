@@ -10,7 +10,7 @@ import { BulkImportProvider, useBulkImport } from '../../context/BulkImportConte
 import { useBulkImportApi } from '../../hooks/useBulkImportApi';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
-import { ArrowLeft, ArrowRight, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, X, Loader2 } from 'lucide-react';
 import { cn } from '../ui/utils';
 import type { BulkInputType } from '../../types/bulk-import';
 
@@ -98,20 +98,35 @@ function BulkImportContent({
       {/* Header */}
       <div className="flex items-center justify-between py-4 px-1">
         <div className="flex items-center gap-4">
-          {onBack && !isImportRunning && (
+          {!isImportRunning && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={onBack}
+              onClick={() => {
+                // If we can go back within the workflow, do that
+                // Otherwise, exit to the workouts page
+                if (canGoBack()) {
+                  goBack();
+                } else if (onBack) {
+                  onBack();
+                }
+              }}
               className="text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
+              {canGoBack() ? 'Previous' : 'Exit'}
             </Button>
           )}
           <div>
-            <h1 className="text-xl font-semibold">{stepInfo.title}</h1>
-            <p className="text-sm text-muted-foreground">{stepInfo.description}</p>
+            <h1 className="text-xl font-semibold">
+              {stepInfo.title}
+              {state.loading && (
+                <Loader2 className="inline-block w-5 h-5 ml-2 animate-spin text-muted-foreground" />
+              )}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {state.loading ? 'Processing...' : stepInfo.description}
+            </p>
           </div>
         </div>
         {!isImportRunning && !isImportComplete && (
@@ -126,6 +141,14 @@ function BulkImportContent({
       {!isImportComplete && (
         <div className="py-4">
           <StepProgressBar />
+        </div>
+      )}
+
+      {/* Error Display */}
+      {state.error && (
+        <div className="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+          <p className="font-medium">Error</p>
+          <p className="text-sm">{state.error}</p>
         </div>
       )}
 
