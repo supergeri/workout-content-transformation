@@ -3,7 +3,13 @@ import { Toaster, toast } from 'sonner@2.0.3';
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
-import { Dumbbell, Settings, ChevronRight, ArrowLeft, BarChart3, Users, Activity, CalendarDays } from 'lucide-react';
+import { Dumbbell, Settings, ChevronRight, ChevronDown, ArrowLeft, BarChart3, Users, Activity, CalendarDays, Upload, FileText } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './components/ui/dropdown-menu';
 import { AddSources, Source } from './components/AddSources';
 import { StructureWorkout } from './components/StructureWorkout';
 import { ValidateMap } from './components/ValidateMap';
@@ -1114,17 +1120,41 @@ export default function App() {
               </div>
               
               <nav className="hidden md:flex items-center gap-1">
-                <Button
-                  variant={currentView === 'workflow' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => {
-                    checkUnsavedChanges(() => {
-                      setCurrentView('workflow');
-                    });
-                  }}
-                >
-                  Workflow
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant={(currentView === 'workflow' || currentView === 'bulk-import') ? 'default' : 'ghost'}
+                      size="sm"
+                      className="gap-1"
+                    >
+                      Import
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        checkUnsavedChanges(() => {
+                          setCurrentView('workflow');
+                        });
+                      }}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      Single Import
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        checkUnsavedChanges(() => {
+                          clearWorkflowState();
+                          setCurrentView('bulk-import');
+                        });
+                      }}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Bulk Import
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant={currentView === 'calendar' ? 'default' : 'ghost'}
                   size="sm"
