@@ -2,7 +2,7 @@
  * Bulk Import API Client
  *
  * API client for the bulk import workflow endpoints.
- * Connects to mapper-api /import/* endpoints.
+ * Connects to workout-ingestor-api /import/* endpoints.
  */
 
 import {
@@ -21,8 +21,8 @@ import {
   ColumnMapping,
 } from '../types/bulk-import';
 
-// API base URL - defaults to localhost:8001 (mapper-api)
-const MAPPER_API_BASE_URL = import.meta.env.VITE_MAPPER_API_URL || 'http://localhost:8001';
+// API base URL - defaults to localhost:8004 (workout-ingestor-api)
+const INGESTOR_API_BASE_URL = import.meta.env.VITE_INGESTOR_API_URL || 'http://localhost:8004';
 
 // ============================================================================
 // API Client Class
@@ -49,7 +49,7 @@ class BulkImportApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const url = `${MAPPER_API_BASE_URL}${endpoint}`;
+    const url = `${INGESTOR_API_BASE_URL}${endpoint}`;
 
     const response = await fetch(url, {
       ...options,
@@ -115,7 +115,7 @@ class BulkImportApiClient {
     formData.append('file', file);
     formData.append('profile_id', profileId);
 
-    const url = `${MAPPER_API_BASE_URL}/import/detect/file`;
+    const url = `${INGESTOR_API_BASE_URL}/import/detect/file`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -223,8 +223,8 @@ class BulkImportApiClient {
    * Get import job status
    * Used for polling during async import
    */
-  async getStatus(jobId: string): Promise<BulkStatusResponse> {
-    return this.request<BulkStatusResponse>(`/import/status/${jobId}`, {
+  async getStatus(jobId: string, profileId: string): Promise<BulkStatusResponse> {
+    return this.request<BulkStatusResponse>(`/import/status/${jobId}?profile_id=${encodeURIComponent(profileId)}`, {
       method: 'GET',
     });
   }
@@ -232,9 +232,9 @@ class BulkImportApiClient {
   /**
    * Cancel a running import
    */
-  async cancel(jobId: string): Promise<{ success: boolean; message: string }> {
+  async cancel(jobId: string, profileId: string): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>(
-      `/import/cancel/${jobId}`,
+      `/import/cancel/${jobId}?profile_id=${encodeURIComponent(profileId)}`,
       {
         method: 'POST',
       }

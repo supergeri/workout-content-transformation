@@ -371,7 +371,7 @@ export function useBulkImportApi({
       if (!state.import.jobId) return;
 
       try {
-        const status = await bulkImportApi.getStatus(state.import.jobId);
+        const status = await bulkImportApi.getStatus(state.import.jobId, userId);
 
         dispatch({
           type: 'UPDATE_IMPORT_PROGRESS',
@@ -453,7 +453,7 @@ export function useBulkImportApi({
     if (!state.import.jobId) return;
 
     try {
-      await bulkImportApi.cancel(state.import.jobId);
+      await bulkImportApi.cancel(state.import.jobId, userId);
       dispatch({ type: 'SET_IMPORT_STATUS', status: 'cancelled' });
 
       if (pollingRef.current) {
