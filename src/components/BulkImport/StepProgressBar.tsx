@@ -6,7 +6,7 @@
  * and adapts to skipped steps.
  */
 
-import { CheckCircle, Circle, ChevronRight } from 'lucide-react';
+import { CheckCircle, ChevronRight } from 'lucide-react';
 import { useBulkImport } from '../../context/BulkImportContext';
 import { BulkImportStep } from '../../types/bulk-import';
 import { cn } from '../ui/utils';
@@ -16,7 +16,7 @@ interface StepProgressBarProps {
 }
 
 const stepConfig: Record<BulkImportStep, { label: string; shortLabel: string }> = {
-  detect: { label: 'Detect', shortLabel: 'Detect' },
+  detect: { label: 'Add Sources', shortLabel: 'Sources' },
   map: { label: 'Map Columns', shortLabel: 'Map' },
   match: { label: 'Match Exercises', shortLabel: 'Match' },
   preview: { label: 'Preview', shortLabel: 'Preview' },
@@ -37,7 +37,7 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
   return (
     <div className={cn('w-full', className)}>
       {/* Desktop View */}
-      <div className="hidden sm:flex items-center justify-center">
+      <div className="hidden sm:flex items-center justify-center gap-1">
         {state.activeSteps.map((step, index) => {
           const isActive = step === state.step;
           const isCompleted = index < currentIndex;
@@ -51,19 +51,19 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
                 onClick={() => handleStepClick(step, index)}
                 disabled={!isClickable}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg transition-all',
-                  isClickable && 'cursor-pointer hover:bg-white/5',
+                  'flex items-center gap-3 px-4 py-2 rounded-full transition-all',
+                  isClickable && 'cursor-pointer hover:bg-muted/50',
                   !isClickable && !isActive && 'cursor-default',
-                  isActive && 'cursor-default'
+                  isActive && 'cursor-default bg-muted/30'
                 )}
               >
-                {/* Circle/Checkmark */}
+                {/* Numbered Circle */}
                 <div
                   className={cn(
-                    'flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-all',
-                    isActive && 'bg-primary text-primary-foreground ring-2 ring-primary/30',
-                    isCompleted && 'bg-emerald-500/20 text-emerald-400',
-                    !isActive && !isCompleted && 'bg-white/5 text-muted-foreground'
+                    'flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold transition-all border-2',
+                    isActive && 'bg-primary text-primary-foreground border-primary',
+                    isCompleted && 'bg-emerald-500 text-white border-emerald-500',
+                    !isActive && !isCompleted && 'bg-muted/50 text-muted-foreground border-muted-foreground/30'
                   )}
                 >
                   {isCompleted ? (
@@ -76,9 +76,9 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
                 {/* Label */}
                 <span
                   className={cn(
-                    'text-sm font-medium transition-colors',
-                    isActive && 'text-primary',
-                    isCompleted && 'text-emerald-400',
+                    'text-sm font-medium transition-colors whitespace-nowrap',
+                    isActive && 'text-foreground',
+                    isCompleted && 'text-emerald-500',
                     !isActive && !isCompleted && 'text-muted-foreground'
                   )}
                 >
@@ -86,12 +86,12 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
                 </span>
               </button>
 
-              {/* Connector */}
+              {/* Chevron Connector */}
               {index < state.activeSteps.length - 1 && (
                 <ChevronRight
                   className={cn(
-                    'w-5 h-5 mx-1 flex-shrink-0',
-                    index < currentIndex ? 'text-emerald-400/50' : 'text-muted-foreground/30'
+                    'w-5 h-5 mx-2 flex-shrink-0',
+                    index < currentIndex ? 'text-emerald-500' : 'text-muted-foreground/50'
                   )}
                 />
               )}
@@ -100,7 +100,7 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
         })}
       </div>
 
-      {/* Mobile View - Compact */}
+      {/* Mobile View - Compact horizontal */}
       <div className="flex sm:hidden items-center justify-between px-2">
         {state.activeSteps.map((step, index) => {
           const isActive = step === state.step;
@@ -109,26 +109,26 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
           const config = stepConfig[step];
 
           return (
-            <div key={step} className="flex flex-col items-center flex-1">
+            <div key={step} className="flex items-center flex-1">
               <button
                 onClick={() => handleStepClick(step, index)}
                 disabled={!isClickable}
                 className={cn(
-                  'flex flex-col items-center gap-1 py-2 px-1 rounded transition-all',
+                  'flex flex-col items-center gap-2 py-2 flex-1 rounded transition-all',
                   isClickable && 'cursor-pointer active:scale-95'
                 )}
               >
-                {/* Circle/Checkmark */}
+                {/* Numbered Circle */}
                 <div
                   className={cn(
-                    'flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium transition-all',
-                    isActive && 'bg-primary text-primary-foreground',
-                    isCompleted && 'bg-emerald-500/20 text-emerald-400',
-                    !isActive && !isCompleted && 'bg-white/5 text-muted-foreground'
+                    'flex items-center justify-center w-10 h-10 rounded-full text-sm font-semibold transition-all border-2',
+                    isActive && 'bg-primary text-primary-foreground border-primary',
+                    isCompleted && 'bg-emerald-500 text-white border-emerald-500',
+                    !isActive && !isCompleted && 'bg-muted/50 text-muted-foreground border-muted-foreground/30'
                   )}
                 >
                   {isCompleted ? (
-                    <CheckCircle className="w-4 h-4" />
+                    <CheckCircle className="w-5 h-5" />
                   ) : (
                     <span>{index + 1}</span>
                   )}
@@ -137,39 +137,28 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
                 {/* Short Label */}
                 <span
                   className={cn(
-                    'text-[10px] font-medium transition-colors text-center',
-                    isActive && 'text-primary',
-                    isCompleted && 'text-emerald-400',
-                    !isActive && !isCompleted && 'text-muted-foreground/60'
+                    'text-xs font-medium transition-colors text-center',
+                    isActive && 'text-foreground',
+                    isCompleted && 'text-emerald-500',
+                    !isActive && !isCompleted && 'text-muted-foreground'
                   )}
                 >
                   {config.shortLabel}
                 </span>
               </button>
 
-              {/* Progress line under the step */}
+              {/* Connector line */}
               {index < state.activeSteps.length - 1 && (
                 <div
                   className={cn(
-                    'absolute h-0.5 w-full top-[22px] left-1/2',
-                    index < currentIndex ? 'bg-emerald-500/30' : 'bg-white/5'
+                    'h-0.5 flex-1 -mx-1 mb-6',
+                    index < currentIndex ? 'bg-emerald-500' : 'bg-muted-foreground/20'
                   )}
-                  style={{ display: 'none' }} // Hidden for now, using flex gap instead
                 />
               )}
             </div>
           );
         })}
-      </div>
-
-      {/* Progress bar under steps */}
-      <div className="mt-3 h-1 bg-white/5 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-primary to-emerald-500 transition-all duration-500 ease-out"
-          style={{
-            width: `${((currentIndex + 1) / state.activeSteps.length) * 100}%`,
-          }}
-        />
       </div>
     </div>
   );
