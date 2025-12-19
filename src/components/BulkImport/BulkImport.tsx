@@ -98,23 +98,16 @@ function BulkImportContent({
       {/* Header */}
       <div className="flex items-center justify-between py-4 px-1">
         <div className="flex items-center gap-4">
-          {!isImportRunning && (
+          {/* Only show back button when there's a previous step */}
+          {!isImportRunning && canGoBack() && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                // If we can go back within the workflow, do that
-                // Otherwise, exit to the workouts page
-                if (canGoBack()) {
-                  goBack();
-                } else if (onBack) {
-                  onBack();
-                }
-              }}
+              onClick={goBack}
               className="text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              {canGoBack() ? 'Previous' : 'Exit'}
+              Previous
             </Button>
           )}
           <div>
