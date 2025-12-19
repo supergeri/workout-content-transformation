@@ -61,7 +61,25 @@ class BulkImportApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new Error(error.detail || `API error: ${response.status} ${response.statusText}`);
+      // Handle error.detail being a string, array, or object
+      let errorMessage = `API error: ${response.status} ${response.statusText}`;
+      if (error.detail) {
+        if (typeof error.detail === 'string') {
+          errorMessage = error.detail;
+        } else if (Array.isArray(error.detail)) {
+          // Validation errors from FastAPI often come as an array
+          errorMessage = error.detail
+            .map((e: { msg?: string; message?: string; loc?: string[] }) =>
+              e.msg || e.message || (e.loc ? `${e.loc.join('.')}: validation error` : 'Validation error')
+            )
+            .join('; ');
+        } else if (typeof error.detail === 'object') {
+          errorMessage = JSON.stringify(error.detail);
+        }
+      } else if (error.message) {
+        errorMessage = String(error.message);
+      }
+      throw new Error(errorMessage);
     }
 
     return response.json();

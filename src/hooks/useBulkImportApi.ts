@@ -84,10 +84,35 @@ export function useBulkImportApi({
     };
   }, []);
 
-  // Error handler
+  // Error handler - ensures errors are always displayed as strings
   const handleError = useCallback(
     (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      let errorMessage = 'An error occurred';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object') {
+        // Handle object errors (API responses, etc.)
+        const errorObj = error as Record<string, unknown>;
+        if (errorObj.detail) {
+          errorMessage = String(errorObj.detail);
+        } else if (errorObj.message) {
+          errorMessage = String(errorObj.message);
+        } else if (errorObj.error) {
+          errorMessage = String(errorObj.error);
+        } else {
+          // Last resort - try to stringify but limit length
+          try {
+            const jsonStr = JSON.stringify(error);
+            errorMessage = jsonStr.length > 200 ? jsonStr.slice(0, 200) + '...' : jsonStr;
+          } catch {
+            errorMessage = 'An unknown error occurred';
+          }
+        }
+      }
+
       dispatch({ type: 'SET_ERROR', error: errorMessage });
       dispatch({ type: 'SET_LOADING', loading: false });
       onError?.(error instanceof Error ? error : new Error(errorMessage));
