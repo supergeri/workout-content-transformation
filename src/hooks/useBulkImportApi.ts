@@ -124,6 +124,27 @@ export function useBulkImportApi({
           items: response.items,
           metadata: response.metadata,
         });
+
+        // Extract column mappings from detected items for file imports
+        const firstItem = response.items[0];
+        if (firstItem?.raw_data?.column_info) {
+          const columnMappings: ColumnMapping[] = firstItem.raw_data.column_info.map(
+            (col: { source_column: string; source_column_index: number; target_field: string; confidence: number; sample_values?: string[] }, idx: number) => ({
+              sourceColumn: col.source_column || `Column ${idx + 1}`,
+              sourceColumnIndex: col.source_column_index ?? idx,
+              targetField: col.target_field || 'ignore',
+              confidence: col.confidence || 0,
+              userOverride: false,
+              sampleValues: col.sample_values || [],
+            })
+          );
+          dispatch({
+            type: 'SET_COLUMN_MAPPINGS',
+            columns: columnMappings,
+            patterns: firstItem.patterns || [],
+          });
+        }
+
         dispatch({ type: 'SET_LOADING', loading: false });
         goNext();
       } catch (error) {

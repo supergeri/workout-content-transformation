@@ -120,16 +120,20 @@ export function MapStep({ userId }: MapStepProps) {
     await applyColumnMappings(localMappings);
   }, [localMappings, state.mappings.patterns, dispatch, applyColumnMappings]);
 
-  // If no columns detected yet, show placeholder
+  // If no columns detected, file was parsed directly - allow skipping
   if (localMappings.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <Wand2 className="w-12 h-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-medium mb-2">Analyzing File Structure</h3>
-        <p className="text-muted-foreground max-w-md">
-          We'll automatically detect column mappings from your file.
-          You can adjust them before proceeding.
+        <CheckCircle className="w-12 h-12 text-emerald-500 mb-4" />
+        <h3 className="text-lg font-medium mb-2">File Parsed Successfully</h3>
+        <p className="text-muted-foreground max-w-md mb-6">
+          Your file format was recognized and parsed directly.
+          No manual column mapping is needed.
         </p>
+        <Button onClick={goNext} size="lg" className="h-12">
+          Continue to Match Exercises
+          <ArrowRight className="w-4 h-4 ml-2" />
+        </Button>
       </div>
     );
   }
