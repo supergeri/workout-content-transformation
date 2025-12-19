@@ -53,11 +53,11 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
                 !isClickable && 'cursor-default'
               )}
             >
-              {/* Circle with number - using inline styles for guaranteed visibility */}
+              {/* Circle with number */}
               <span
                 className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold"
                 style={{
-                  backgroundColor: isActive ? '#27272a' : isCompleted ? '#10b981' : '#e4e4e7',
+                  backgroundColor: isActive ? '#27272a' : isCompleted ? '#27272a' : '#e4e4e7',
                   color: isActive ? '#ffffff' : isCompleted ? '#ffffff' : '#71717a',
                 }}
               >
@@ -72,7 +72,7 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
               <span
                 className="text-sm font-medium"
                 style={{
-                  color: isActive ? '#18181b' : isCompleted ? '#059669' : '#a1a1aa',
+                  color: isActive ? '#18181b' : isCompleted ? '#18181b' : '#a1a1aa',
                 }}
               >
                 {config.label}
@@ -84,7 +84,7 @@ export function StepProgressBar({ className }: StepProgressBarProps) {
               <ChevronRight
                 className="w-4 h-4 mx-3 flex-shrink-0"
                 style={{
-                  color: index < currentIndex ? '#10b981' : '#d4d4d8',
+                  color: '#d4d4d8',
                 }}
               />
             )}
