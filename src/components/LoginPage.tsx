@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Dumbbell, Mail, Lock, Loader2 } from 'lucide-react';
+import { Mail, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { signUp, signIn, signInWithOAuth } from '../lib/auth';
 
@@ -122,9 +122,11 @@ export function LoginPage({ onLogin, onSignUp }: LoginPageProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center">
-              <Dumbbell className="w-8 h-8 text-primary-foreground" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="AmakaFlow"
+              className="w-16 h-16 rounded-xl object-contain"
+            />
           </div>
           <div>
             <CardTitle className="text-3xl">AmakaFlow</CardTitle>
