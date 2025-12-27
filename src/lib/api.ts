@@ -345,9 +345,9 @@ export async function generateWorkoutStructure(
         '/ingest/tiktok',
         {
           method: 'POST',
-          // Use hybrid mode to combine audio transcription (notes/tips) with
-          // vision analysis (on-screen reps/sets)
-          body: JSON.stringify({ url: source.content, mode: 'hybrid' }),
+          // Use oembed mode - official TikTok API, no video download required
+          // Falls back to thumbnail vision if text parsing fails
+          body: JSON.stringify({ url: source.content, mode: 'oembed' }),
         },
         signal,
       );
