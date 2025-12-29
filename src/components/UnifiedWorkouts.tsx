@@ -85,6 +85,8 @@ import { TagManagementModal } from './TagManagementModal';
 import { WorkoutTagsEditor } from './WorkoutTagsEditor';
 import { getUserTags, updateWorkoutTags } from '../lib/workout-api';
 import type { UserTag } from '../types/unified-workout';
+import { ActivityHistory } from './ActivityHistory';
+import { fetchWorkoutCompletions, type WorkoutCompletion } from '../lib/completions-api';
 
 // =============================================================================
 // Types
@@ -202,6 +204,12 @@ export function UnifiedWorkouts({
   const [availableTags, setAvailableTags] = useState<UserTag[]>([]);
   const [showTagManagement, setShowTagManagement] = useState(false);
 
+  // Activity History state (AMA-196)
+  const [showActivityHistory, setShowActivityHistory] = useState(false);
+  const [completions, setCompletions] = useState<WorkoutCompletion[]>([]);
+  const [completionsLoading, setCompletionsLoading] = useState(false);
+  const [completionsTotal, setCompletionsTotal] = useState(0);
+
   // Fetch workouts
   const loadWorkouts = useCallback(async () => {
     setIsLoading(true);
@@ -239,6 +247,39 @@ export function UnifiedWorkouts({
   useEffect(() => {
     loadTags();
   }, [loadTags]);
+
+  // Load completions when Activity History is shown (AMA-196)
+  const loadCompletions = useCallback(async () => {
+    setCompletionsLoading(true);
+    try {
+      const result = await fetchWorkoutCompletions(50, 0);
+      setCompletions(result.completions);
+      setCompletionsTotal(result.total);
+    } catch (err) {
+      console.error('[UnifiedWorkouts] Error loading completions:', err);
+    } finally {
+      setCompletionsLoading(false);
+    }
+  }, []);
+
+  const loadMoreCompletions = useCallback(async () => {
+    if (completionsLoading) return;
+    setCompletionsLoading(true);
+    try {
+      const result = await fetchWorkoutCompletions(50, completions.length);
+      setCompletions((prev) => [...prev, ...result.completions]);
+    } catch (err) {
+      console.error('[UnifiedWorkouts] Error loading more completions:', err);
+    } finally {
+      setCompletionsLoading(false);
+    }
+  }, [completions.length, completionsLoading]);
+
+  useEffect(() => {
+    if (showActivityHistory && completions.length === 0) {
+      loadCompletions();
+    }
+  }, [showActivityHistory, completions.length, loadCompletions]);
 
   // Derive available platforms from data
   const availablePlatforms = useMemo(() => {
@@ -754,6 +795,16 @@ export function UnifiedWorkouts({
               <List className="w-4 h-4" />
               Compact
             </Button>
+            <div className="w-px h-6 bg-border mx-1" />
+            <Button
+              variant={showActivityHistory ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setShowActivityHistory(!showActivityHistory)}
+              className="gap-2"
+            >
+              <Activity className="w-4 h-4" />
+              Activity History
+            </Button>
           </div>
         </div>
 
@@ -926,15 +977,27 @@ export function UnifiedWorkouts({
         </div>
       </div>
 
-      {/* Programs Section */}
-      <ProgramsSection
-        profileId={profileId}
-        workouts={allWorkouts}
-        onLoadWorkout={handleLoadUnified}
-      />
+      {/* Activity History View (AMA-196) */}
+      {showActivityHistory ? (
+        <div className="pr-4 max-w-7xl mx-auto">
+          <ActivityHistory
+            completions={completions}
+            loading={completionsLoading}
+            onLoadMore={loadMoreCompletions}
+            hasMore={completions.length < completionsTotal}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Programs Section */}
+          <ProgramsSection
+            profileId={profileId}
+            workouts={allWorkouts}
+            onLoadWorkout={handleLoadUnified}
+          />
 
-      {/* Workout List */}
-      <ScrollArea className="h-[calc(100vh-280px)]">
+          {/* Workout List */}
+          <ScrollArea className="h-[calc(100vh-280px)]">
         <div className={viewMode === 'cards' ? 'space-y-2 pr-4 max-w-7xl mx-auto' : 'space-y-1 pr-4 max-w-7xl mx-auto'}>
           {displayedWorkouts.map((workout) => {
             const isVideo = workout._original.type === 'follow-along';
@@ -1366,38 +1429,42 @@ export function UnifiedWorkouts({
           })}
         </div>
       </ScrollArea>
+        </>
+      )}
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-4 py-3 text-sm text-muted-foreground">
-        <div>
-          Showing {filteredWorkouts.length === 0 ? 0 : pageStart + 1} –{' '}
-          {Math.min(pageStart + PAGE_SIZE, filteredWorkouts.length)} of{' '}
-          {filteredWorkouts.length} workout{filteredWorkouts.length === 1 ? '' : 's'}
+      {/* Pagination - hide when showing Activity History */}
+      {!showActivityHistory && (
+        <div className="flex items-center justify-between px-4 py-3 text-sm text-muted-foreground">
+          <div>
+            Showing {filteredWorkouts.length === 0 ? 0 : pageStart + 1} –{' '}
+            {Math.min(pageStart + PAGE_SIZE, filteredWorkouts.length)} of{' '}
+            {filteredWorkouts.length} workout{filteredWorkouts.length === 1 ? '' : 's'}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={currentPageIndex === 0}
+              onClick={() => setPageIndex((prev) => Math.max(0, prev - 1))}
+            >
+              Previous
+            </Button>
+            <span>
+              Page {currentPageIndex + 1} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={currentPageIndex >= totalPages - 1}
+              onClick={() => setPageIndex((prev) => Math.min(totalPages - 1, prev + 1))}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPageIndex === 0}
-            onClick={() => setPageIndex((prev) => Math.max(0, prev - 1))}
-          >
-            Previous
-          </Button>
-          <span>
-            Page {currentPageIndex + 1} of {totalPages}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={currentPageIndex >= totalPages - 1}
-            onClick={() => setPageIndex((prev) => Math.min(totalPages - 1, prev + 1))}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!confirmDeleteId} onOpenChange={(open) => !open && handleDeleteCancel()}>
