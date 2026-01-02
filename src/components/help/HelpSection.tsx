@@ -198,9 +198,10 @@ function InlineScreenshot({ src, alt }: { src: string; alt: string }) {
 
   return (
     <figure className="my-6">
-      <div className={`rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900 ${
-        isMobileScreenshot ? "w-[180px]" : "max-w-2xl"
-      }`}>
+      <div
+        className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900"
+        style={{ width: isMobileScreenshot ? '180px' : undefined, maxWidth: isMobileScreenshot ? '180px' : '672px' }}
+      >
         <img
           src={src}
           alt={alt}
@@ -209,7 +210,7 @@ function InlineScreenshot({ src, alt }: { src: string; alt: string }) {
         />
       </div>
       {alt && (
-        <figcaption className="mt-2 text-sm text-zinc-500 italic">
+        <figcaption className="mt-2 text-sm text-zinc-500 italic" style={{ maxWidth: isMobileScreenshot ? '180px' : '672px' }}>
           {alt}
         </figcaption>
       )}
