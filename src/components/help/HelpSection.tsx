@@ -199,7 +199,7 @@ function InlineScreenshot({ src, alt }: { src: string; alt: string }) {
   return (
     <figure className="my-6">
       <div className={`rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900 ${
-        isMobileScreenshot ? "w-48" : "max-w-2xl"
+        isMobileScreenshot ? "w-[180px]" : "max-w-2xl"
       }`}>
         <img
           src={src}
