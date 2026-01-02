@@ -179,9 +179,16 @@ function ScreenshotImage({ filename }: { filename: string }) {
 // Inline screenshot component for markdown images
 function InlineScreenshot({ src, alt }: { src: string; alt: string }) {
   const [error, setError] = useState(false);
+  const filename = src.split("/").pop() || src;
+
+  // Detect iPhone/mobile screenshots for smaller sizing
+  const isMobileScreenshot =
+    filename.startsWith("ios-") ||
+    filename.startsWith("testflight-") ||
+    filename.startsWith("remote-") ||
+    filename.startsWith("watch-");
 
   if (error) {
-    const filename = src.split("/").pop() || src;
     return (
       <div className="my-6">
         <ScreenshotPlaceholder filename={filename} />
@@ -191,7 +198,9 @@ function InlineScreenshot({ src, alt }: { src: string; alt: string }) {
 
   return (
     <figure className="my-6">
-      <div className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900 max-w-2xl">
+      <div className={`rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900 ${
+        isMobileScreenshot ? "max-w-xs" : "max-w-2xl"
+      }`}>
         <img
           src={src}
           alt={alt}
