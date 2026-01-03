@@ -103,6 +103,7 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
   const [voiceSettingsSaving, setVoiceSettingsSaving] = useState(false);
   const [dictionary, setDictionary] = useState<DictionaryCorrection[]>([]);
   const [dictionaryLoading, setDictionaryLoading] = useState(false);
+  const [dictionaryLoaded, setDictionaryLoaded] = useState(false);
   const [newMisheard, setNewMisheard] = useState('');
   const [newCorrected, setNewCorrected] = useState('');
   const [addingCorrection, setAddingCorrection] = useState(false);
@@ -135,14 +136,17 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
 
   // Fetch personal dictionary when voice section is active (AMA-229)
   useEffect(() => {
-    if (activeSection === 'voice' && dictionary.length === 0 && !dictionaryLoading) {
+    if (activeSection === 'voice' && !dictionaryLoaded && !dictionaryLoading) {
       setDictionaryLoading(true);
       getPersonalDictionary()
         .then((result) => setDictionary(result.corrections))
         .catch((err) => console.error('Failed to fetch dictionary:', err))
-        .finally(() => setDictionaryLoading(false));
+        .finally(() => {
+          setDictionaryLoading(false);
+          setDictionaryLoaded(true);
+        });
     }
-  }, [activeSection, dictionary.length, dictionaryLoading]);
+  }, [activeSection, dictionaryLoaded, dictionaryLoading]);
 
   useEffect(() => {
     // Load linked OAuth providers from Clerk user
