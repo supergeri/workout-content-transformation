@@ -38,6 +38,7 @@ import {
   PROVIDER_INFO,
   ACCENT_OPTIONS,
 } from '../lib/voice-api';
+import { DeletionPreview, getDeletionPreview, deleteAccountData } from '../lib/account-api';
 import { DeviceId } from '../lib/devices';
 import { toast } from 'sonner';
 import { LinkedAccounts } from './LinkedAccounts';
@@ -107,6 +108,12 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
   const [newMisheard, setNewMisheard] = useState('');
   const [newCorrected, setNewCorrected] = useState('');
   const [addingCorrection, setAddingCorrection] = useState(false);
+
+  // Account deletion state (AMA-200)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletionPreview, setDeletionPreview] = useState<DeletionPreview | null>(null);
+  const [deletionPreviewLoading, setDeletionPreviewLoading] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // Fetch paired device count on mount (AMA-184)
   useEffect(() => {
@@ -342,18 +349,43 @@ export function UserSettings({ user, onBack, onAccountsChange, onAccountDeleted,
     });
   };
 
+  // Open delete dialog and fetch deletion preview (AMA-200)
+  const handleOpenDeleteDialog = async () => {
+    setDeleteDialogOpen(true);
+    setDeletionPreviewLoading(true);
+    setDeleteConfirmText('');
+
+    try {
+      const preview = await getDeletionPreview();
+      setDeletionPreview(preview);
+    } catch (error: any) {
+      console.error('Error fetching deletion preview:', error);
+      toast.error('Failed to load account data. Please try again.');
+    } finally {
+      setDeletionPreviewLoading(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') {
+      toast.error('Please type DELETE to confirm');
+      return;
+    }
+
     setIsDeleting(true);
     try {
       if (!clerkUser) {
         throw new Error('User not authenticated');
       }
-      
-      // Clerk handles account deletion through their dashboard or API
-      // For now, we'll sign the user out and show a message
-      // In production, you'd call Clerk's API to delete the user
+
+      // Delete all user data from the database via mapper-api
+      await deleteAccountData();
+
+      // Sign out from Clerk
       await signOut();
-      toast.success('Account deletion initiated. Please contact support if you need assistance.');
+
+      toast.success('Your account has been deleted.');
+      setDeleteDialogOpen(false);
       onAccountDeleted?.();
     } catch (error: any) {
       console.error('Error deleting account:', error);
@@ -1442,30 +1474,145 @@ Block: Warm-Up
                   
                   <Separator />
                   
-                  <AlertDialog>
+                  <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="w-full" disabled={isDeleting}>
+                      <Button
+                        variant="destructive"
+                        className="w-full"
+                        disabled={isDeleting}
+                        onClick={handleOpenDeleteDialog}
+                      >
                         {isDeleting ? 'Deleting...' : 'Delete Account'}
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent>
+                    <AlertDialogContent className="max-w-lg">
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This action cannot be undone. This will permanently delete your account
-                          and remove all your data from our servers. Your profile, workout history,
-                          and all associated data will be permanently deleted.
+                        <AlertDialogTitle className="text-destructive">Delete Your Account</AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                          <div className="space-y-4">
+                            <p>
+                              This action is permanent and cannot be undone. All your data will be deleted.
+                            </p>
+
+                            {/* Data Preview */}
+                            {deletionPreviewLoading ? (
+                              <div className="flex items-center justify-center py-6">
+                                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                                <span className="ml-2 text-muted-foreground">Loading your data...</span>
+                              </div>
+                            ) : deletionPreview ? (
+                              <div className="space-y-3">
+                                <p className="font-medium text-foreground">The following data will be permanently deleted:</p>
+                                <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
+                                  {deletionPreview.workouts > 0 && (
+                                    <div className="flex justify-between">
+                                      <span>Workouts</span>
+                                      <span className="font-medium text-foreground">{deletionPreview.workouts}</span>
+                                    </div>
+                                  )}
+                                  {deletionPreview.workout_completions > 0 && (
+                                    <div className="flex justify-between">
+                                      <span>Workout completions</span>
+                                      <span className="font-medium text-foreground">{deletionPreview.workout_completions}</span>
+                                    </div>
+                                  )}
+                                  {deletionPreview.programs > 0 && (
+                                    <div className="flex justify-between">
+                                      <span>Programs</span>
+                                      <span className="font-medium text-foreground">{deletionPreview.programs}</span>
+                                    </div>
+                                  )}
+                                  {deletionPreview.follow_along_workouts > 0 && (
+                                    <div className="flex justify-between">
+                                      <span>Follow-along workouts</span>
+                                      <span className="font-medium text-foreground">{deletionPreview.follow_along_workouts}</span>
+                                    </div>
+                                  )}
+                                  {deletionPreview.tags > 0 && (
+                                    <div className="flex justify-between">
+                                      <span>Custom tags</span>
+                                      <span className="font-medium text-foreground">{deletionPreview.tags}</span>
+                                    </div>
+                                  )}
+                                  {deletionPreview.voice_corrections > 0 && (
+                                    <div className="flex justify-between">
+                                      <span>Voice corrections</span>
+                                      <span className="font-medium text-foreground">{deletionPreview.voice_corrections}</span>
+                                    </div>
+                                  )}
+                                  {deletionPreview.total_items === 0 && (
+                                    <p className="text-muted-foreground italic">No workout data found</p>
+                                  )}
+                                </div>
+
+                                {/* iOS Device Warning */}
+                                {deletionPreview.has_ios_devices && (
+                                  <Alert variant="destructive" className="border-orange-500 bg-orange-500/10">
+                                    <Smartphone className="h-4 w-4" />
+                                    <AlertDescription className="text-sm">
+                                      <span className="font-medium">iOS App Detected:</span> You have {deletionPreview.paired_devices} paired iOS device{deletionPreview.paired_devices > 1 ? 's' : ''}.
+                                      After deletion, you will need to sign out of the AmakaFlow iOS app manually.
+                                      The app will no longer sync with your account.
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
+
+                                {/* External Connections Warning */}
+                                {deletionPreview.has_external_connections && (
+                                  <Alert className="border-yellow-500 bg-yellow-500/10">
+                                    <Link2 className="h-4 w-4" />
+                                    <AlertDescription className="text-sm">
+                                      <span className="font-medium">Connected Services:</span>{' '}
+                                      {deletionPreview.strava_connection && 'Strava'}
+                                      {deletionPreview.strava_connection && deletionPreview.garmin_connection && ' and '}
+                                      {deletionPreview.garmin_connection && 'Garmin'} connection{deletionPreview.strava_connection && deletionPreview.garmin_connection ? 's' : ''} will be removed.
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
+                              </div>
+                            ) : null}
+
+                            {/* DELETE Confirmation */}
+                            <div className="space-y-2 pt-2">
+                              <Label htmlFor="delete-confirm" className="text-foreground font-medium">
+                                Type DELETE to confirm
+                              </Label>
+                              <Input
+                                id="delete-confirm"
+                                value={deleteConfirmText}
+                                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                placeholder="DELETE"
+                                className="font-mono"
+                                disabled={isDeleting}
+                              />
+                            </div>
+                          </div>
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={handleDeleteAccount}
+                        <AlertDialogCancel
                           disabled={isDeleting}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => {
+                            setDeleteConfirmText('');
+                            setDeletionPreview(null);
+                          }}
                         >
-                          {isDeleting ? 'Deleting...' : 'Yes, delete my account'}
-                        </AlertDialogAction>
+                          Cancel
+                        </AlertDialogCancel>
+                        <Button
+                          variant="destructive"
+                          onClick={handleDeleteAccount}
+                          disabled={isDeleting || deleteConfirmText !== 'DELETE' || deletionPreviewLoading}
+                        >
+                          {isDeleting ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Deleting...
+                            </>
+                          ) : (
+                            'Delete My Account'
+                          )}
+                        </Button>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
