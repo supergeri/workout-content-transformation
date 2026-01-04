@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Clock, Heart, Flame, Watch, Loader2, Activity } from 'lucide-react';
+import { Clock, Heart, Flame, Watch, Loader2, Activity, Footprints, Route } from 'lucide-react';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -79,6 +79,23 @@ function getSourceDisplayName(source: string): string {
   }
 }
 
+/**
+ * Format distance in meters to km or miles.
+ */
+function formatDistance(meters: number): string {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(2)} km`;
+  }
+  return `${Math.round(meters)} m`;
+}
+
+/**
+ * Format steps with thousands separator.
+ */
+function formatSteps(steps: number): string {
+  return steps.toLocaleString();
+}
+
 // =============================================================================
 // Subcomponents
 // =============================================================================
@@ -125,9 +142,9 @@ function CompletionCard({ completion }: { completion: WorkoutCompletion }) {
   return (
     <Card className="hover:bg-muted/50 transition-colors">
       <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          {/* Left: Workout name and date */}
-          <div className="space-y-1">
+        <div className="flex flex-col gap-3">
+          {/* Top row: Workout name, source, and date */}
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-medium">{completion.workoutName}</span>
               <Badge variant="outline" className="text-xs">
@@ -140,13 +157,32 @@ function CompletionCard({ completion }: { completion: WorkoutCompletion }) {
             </div>
           </div>
 
-          {/* Right: Metrics */}
-          <div className="flex items-center gap-6 text-sm">
+          {/* Bottom row: All metrics */}
+          <div className="flex items-center gap-4 text-sm flex-wrap">
             {/* Duration */}
             <div className="flex items-center gap-1.5" title="Duration">
               <Clock className="w-4 h-4 text-muted-foreground" />
               <span className="font-medium">{formatDuration(completion.durationSeconds)}</span>
             </div>
+
+            {/* Steps */}
+            {completion.steps != null && completion.steps > 0 && (
+              <div className="flex items-center gap-1.5" title="Steps">
+                <Footprints className="w-4 h-4 text-blue-500" />
+                <span>
+                  <span className="font-medium">{formatSteps(completion.steps)}</span>
+                  <span className="text-muted-foreground ml-1">steps</span>
+                </span>
+              </div>
+            )}
+
+            {/* Distance */}
+            {completion.distanceMeters != null && completion.distanceMeters > 0 && (
+              <div className="flex items-center gap-1.5" title="Distance">
+                <Route className="w-4 h-4 text-green-500" />
+                <span className="font-medium">{formatDistance(completion.distanceMeters)}</span>
+              </div>
+            )}
 
             {/* Heart Rate */}
             {(completion.avgHeartRate || completion.maxHeartRate) && (
@@ -165,12 +201,20 @@ function CompletionCard({ completion }: { completion: WorkoutCompletion }) {
               </div>
             )}
 
-            {/* Calories */}
-            {completion.activeCalories && (
-              <div className="flex items-center gap-1.5" title="Active Calories">
+            {/* Calories - show active and total if both available */}
+            {(completion.activeCalories || completion.totalCalories) && (
+              <div className="flex items-center gap-1.5" title={completion.totalCalories ? "Active / Total Calories" : "Active Calories"}>
                 <Flame className="w-4 h-4 text-orange-500" />
                 <span>
-                  <span className="font-medium">{completion.activeCalories}</span>
+                  {completion.activeCalories && (
+                    <span className="font-medium">{completion.activeCalories}</span>
+                  )}
+                  {completion.activeCalories && completion.totalCalories && (
+                    <span className="text-muted-foreground"> / {completion.totalCalories}</span>
+                  )}
+                  {!completion.activeCalories && completion.totalCalories && (
+                    <span className="font-medium">{completion.totalCalories}</span>
+                  )}
                   <span className="text-muted-foreground ml-1">cal</span>
                 </span>
               </div>

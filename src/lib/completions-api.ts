@@ -18,7 +18,11 @@ export interface WorkoutCompletion {
   durationSeconds: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
+  minHeartRate?: number;
   activeCalories?: number;
+  totalCalories?: number;
+  distanceMeters?: number;
+  steps?: number;
   source: string;
 }
 
@@ -71,7 +75,11 @@ export async function fetchWorkoutCompletions(
       durationSeconds: c.duration_seconds,
       avgHeartRate: c.avg_heart_rate,
       maxHeartRate: c.max_heart_rate,
+      minHeartRate: c.min_heart_rate,
       activeCalories: c.active_calories,
+      totalCalories: c.total_calories,
+      distanceMeters: c.distance_meters,
+      steps: c.steps,
       source: c.source,
     })),
     total: data.total || 0,
