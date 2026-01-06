@@ -1,4 +1,5 @@
 import { FitPreviewModal } from "./FitPreviewModal";
+import { AndroidPreviewModal } from "./AndroidPreviewModal";
 import { API_URLS } from '../lib/config';
 import { TrainerDistribution } from './TrainerDistribution';
 import { Switch } from './ui/switch';
@@ -1025,7 +1026,10 @@ export function PublishExport({ exports, validation, sources, onStartNew, select
           )}
 
           <div className="flex gap-2">
-            {workout && (
+            {workout && selectedDevice === 'android-companion' && (
+              <AndroidPreviewModal workout={workout} validation={validation} />
+            )}
+            {workout && selectedDevice !== 'android-companion' && (
               <FitPreviewModal workout={workout} validation={validation} />
             )}
             <Button
