@@ -241,17 +241,13 @@ export function ClearDataModal({ open, onOpenChange, onDataCleared }: ClearDataM
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel
-            disabled={isClearing}
-            onClick={handleClose}
-          >
+          <AlertDialogCancel disabled={isClearing} onClick={handleClose}>
             Cancel
           </AlertDialogCancel>
-          <Button
-            variant="destructive"
+          <AlertDialogAction
             onClick={handleClearData}
             disabled={!isConfirmEnabled || !hasData}
-            className="bg-amber-600 hover:bg-amber-700 disabled:bg-amber-600/50"
+            className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isClearing ? (
               <>
@@ -261,7 +257,7 @@ export function ClearDataModal({ open, onOpenChange, onDataCleared }: ClearDataM
             ) : (
               'Clear All Data'
             )}
-          </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
