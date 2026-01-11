@@ -88,6 +88,7 @@ import type { UserTag } from '../types/unified-workout';
 import { ActivityHistory } from './ActivityHistory';
 import { CompletionDetailView } from './CompletionDetailView';
 import { fetchWorkoutCompletions, type WorkoutCompletion } from '../lib/completions-api';
+import { SyncStatusIndicator } from './workouts/UnifiedWorkoutCard';
 
 // =============================================================================
 // Types
@@ -1043,13 +1044,8 @@ export function UnifiedWorkouts({
                           <Video className="w-3 h-3" />
                           Video
                         </Badge>
-                      ) : hasSyncStatus ? (
-                        <Badge variant="default" className="bg-green-600 text-xs">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Synced
-                        </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-xs">Draft</Badge>
+                        <SyncStatusIndicator workout={workout} />
                       )}
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">

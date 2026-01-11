@@ -135,7 +135,7 @@ function getCategoryIcon(category: string) {
 /**
  * AMA-305: Enhanced sync status indicator showing pending/synced/failed states
  */
-function SyncStatusIndicator({ workout }: { workout: UnifiedWorkout }) {
+export function SyncStatusIndicator({ workout }: { workout: UnifiedWorkout }) {
   const { syncStatus } = workout;
 
   // Collect status for each platform
