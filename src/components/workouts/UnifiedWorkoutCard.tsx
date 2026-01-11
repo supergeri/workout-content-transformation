@@ -21,6 +21,8 @@ import {
   Instagram,
   CheckCircle2,
   Circle,
+  AlertTriangle,
+  Minus,
 } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -130,29 +132,124 @@ function getCategoryIcon(category: string) {
   }
 }
 
+/**
+ * AMA-305: Enhanced sync status indicator showing pending/synced/failed states
+ */
 function SyncStatusIndicator({ workout }: { workout: UnifiedWorkout }) {
   const { syncStatus } = workout;
-  const syncedPlatforms: string[] = [];
 
-  if (syncStatus.garmin?.synced) syncedPlatforms.push('Garmin');
-  if (syncStatus.apple?.synced) syncedPlatforms.push('iOS');
-  if (syncStatus.android?.synced) syncedPlatforms.push('Android');
-  if (syncStatus.strava?.synced) syncedPlatforms.push('Strava');
-  if (syncStatus.ios?.synced && !syncStatus.apple?.synced) syncedPlatforms.push('iOS');
+  // Collect status for each platform
+  type PlatformStatus = {
+    name: string;
+    status: 'synced' | 'pending' | 'syncing' | 'failed' | 'outdated' | 'not_assigned';
+    errorMessage?: string;
+  };
 
-  if (syncedPlatforms.length === 0) {
+  const platformStatuses: PlatformStatus[] = [];
+
+  const getStatus = (entry?: typeof syncStatus.garmin): PlatformStatus['status'] => {
+    if (!entry) return 'not_assigned';
+    if (entry.status) return entry.status;
+    // Backwards compatibility: use synced boolean if status not set
+    return entry.synced ? 'synced' : 'not_assigned';
+  };
+
+  if (syncStatus.garmin) {
+    platformStatuses.push({
+      name: 'Garmin',
+      status: getStatus(syncStatus.garmin),
+      errorMessage: syncStatus.garmin.errorMessage,
+    });
+  }
+  if (syncStatus.apple) {
+    platformStatuses.push({
+      name: 'iOS',
+      status: getStatus(syncStatus.apple),
+      errorMessage: syncStatus.apple.errorMessage,
+    });
+  }
+  if (syncStatus.ios && !syncStatus.apple) {
+    platformStatuses.push({
+      name: 'iOS',
+      status: getStatus(syncStatus.ios),
+      errorMessage: syncStatus.ios.errorMessage,
+    });
+  }
+  if (syncStatus.android) {
+    platformStatuses.push({
+      name: 'Android',
+      status: getStatus(syncStatus.android),
+      errorMessage: syncStatus.android.errorMessage,
+    });
+  }
+  if (syncStatus.strava) {
+    platformStatuses.push({
+      name: 'Strava',
+      status: getStatus(syncStatus.strava),
+      errorMessage: syncStatus.strava.errorMessage,
+    });
+  }
+
+  // Group by status
+  const synced = platformStatuses.filter((p) => p.status === 'synced');
+  const pending = platformStatuses.filter((p) => p.status === 'pending' || p.status === 'syncing');
+  const failed = platformStatuses.filter((p) => p.status === 'failed');
+  const outdated = platformStatuses.filter((p) => p.status === 'outdated');
+
+  // If no platforms configured, show not assigned
+  if (platformStatuses.length === 0) {
     return (
       <div className="flex items-center gap-1 text-muted-foreground">
-        <Circle className="h-3 w-3" />
-        <span className="text-xs">Not synced</span>
+        <Minus className="h-3 w-3" />
+        <span className="text-xs">Not assigned</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-      <CheckCircle2 className="h-3 w-3" />
-      <span className="text-xs">{syncedPlatforms.join(', ')}</span>
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Failed - show first as most important */}
+      {failed.length > 0 && (
+        <div
+          className="flex items-center gap-1 text-red-600 dark:text-red-400"
+          title={failed.map((p) => p.errorMessage || `${p.name} sync failed`).join('\n')}
+        >
+          <AlertTriangle className="h-3 w-3" />
+          <span className="text-xs">{failed.map((p) => p.name).join(', ')} failed</span>
+        </div>
+      )}
+
+      {/* Pending/Syncing */}
+      {pending.length > 0 && (
+        <div className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          <span className="text-xs">{pending.map((p) => p.name).join(', ')} pending</span>
+        </div>
+      )}
+
+      {/* Outdated - needs re-sync */}
+      {outdated.length > 0 && (
+        <div className="flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
+          <RefreshCw className="h-3 w-3" />
+          <span className="text-xs">{outdated.map((p) => p.name).join(', ')} outdated</span>
+        </div>
+      )}
+
+      {/* Synced */}
+      {synced.length > 0 && (
+        <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+          <CheckCircle2 className="h-3 w-3" />
+          <span className="text-xs">{synced.map((p) => p.name).join(', ')}</span>
+        </div>
+      )}
+
+      {/* All not assigned (no synced, pending, or failed) */}
+      {synced.length === 0 && pending.length === 0 && failed.length === 0 && outdated.length === 0 && (
+        <div className="flex items-center gap-1 text-muted-foreground">
+          <Circle className="h-3 w-3" />
+          <span className="text-xs">Not synced</span>
+        </div>
+      )}
     </div>
   );
 }

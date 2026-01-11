@@ -40,13 +40,31 @@ export type WorkoutCategory =
   | 'other';
 
 // =============================================================================
-// Sync Status
+// Sync Status (AMA-305)
 // =============================================================================
 
+/** Sync state for a workout on a device */
+export type SyncState =
+  | 'not_assigned'  // Workout not sent to any device
+  | 'pending'       // Queued for sync, device not connected
+  | 'syncing'       // Currently transferring
+  | 'synced'        // Successfully on device
+  | 'failed'        // Sync error
+  | 'outdated';     // Workout edited after sync
+
 export interface SyncStatusEntry {
+  /** Whether the workout is synced (kept for backwards compatibility) */
   synced: boolean;
+  /** Current sync state */
+  status?: SyncState;
+  /** Device-side workout ID */
   id?: string;
+  /** When last synced */
   syncedAt?: string;
+  /** When queued for sync */
+  queuedAt?: string;
+  /** Error message if sync failed */
+  errorMessage?: string;
 }
 
 export interface SyncStatus {
