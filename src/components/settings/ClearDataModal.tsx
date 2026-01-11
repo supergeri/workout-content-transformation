@@ -247,7 +247,7 @@ export function ClearDataModal({ open, onOpenChange, onDataCleared }: ClearDataM
           <AlertDialogAction
             onClick={handleClearData}
             disabled={!isConfirmEnabled || !hasData}
-            className="bg-amber-600 text-white hover:bg-amber-700 disabled:bg-amber-400 disabled:cursor-not-allowed"
+            className="!bg-amber-600 !text-white hover:!bg-amber-700 disabled:!bg-amber-400 disabled:!opacity-100 disabled:!cursor-not-allowed"
           >
             {isClearing ? (
               <>
