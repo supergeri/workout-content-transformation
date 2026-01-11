@@ -247,23 +247,21 @@ export function ClearDataModal({ open, onOpenChange, onDataCleared }: ClearDataM
           >
             Cancel
           </AlertDialogCancel>
-          {hasData && (
-            <Button
-              variant="destructive"
-              onClick={handleClearData}
-              disabled={!isConfirmEnabled}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              {isClearing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Clearing...
-                </>
-              ) : (
-                'Clear All Data'
-              )}
-            </Button>
-          )}
+          <Button
+            variant="destructive"
+            onClick={handleClearData}
+            disabled={!isConfirmEnabled || !hasData}
+            className="bg-amber-600 hover:bg-amber-700 disabled:bg-amber-600/50"
+          >
+            {isClearing ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Clearing...
+              </>
+            ) : (
+              'Clear All Data'
+            )}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
