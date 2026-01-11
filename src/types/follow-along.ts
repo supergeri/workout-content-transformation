@@ -42,6 +42,7 @@ export type FollowAlongWorkout = {
   appleWatchWorkoutId?: string;
   appleWatchLastSyncAt?: string | null;
   iosCompanionSyncedAt?: string | null; // When synced to iOS companion app
+  androidCompanionSyncedAt?: string | null; // When synced to Android companion app
 };
 
 export type IngestFollowAlongRequest = {

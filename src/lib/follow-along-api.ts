@@ -158,6 +158,8 @@ export async function listFollowAlong(_userId?: string): Promise<ListFollowAlong
     garminLastSyncAt: w.garmin_last_sync_at,
     appleWatchWorkoutId: w.apple_watch_workout_id,
     appleWatchLastSyncAt: w.apple_watch_last_sync_at,
+    iosCompanionSyncedAt: w.ios_companion_synced_at,
+    androidCompanionSyncedAt: w.android_companion_synced_at,
   }));
 
   return { items };
@@ -216,6 +218,8 @@ export async function getFollowAlong(id: string, _userId?: string): Promise<GetF
     garminLastSyncAt: w.garmin_last_sync_at,
     appleWatchWorkoutId: w.apple_watch_workout_id,
     appleWatchLastSyncAt: w.apple_watch_last_sync_at,
+    iosCompanionSyncedAt: w.ios_companion_synced_at,
+    androidCompanionSyncedAt: w.android_companion_synced_at,
   };
 
   return { followAlongWorkout };

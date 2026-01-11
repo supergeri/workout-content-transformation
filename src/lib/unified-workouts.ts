@@ -339,6 +339,7 @@ export function normalizeHistoryWorkout(item: WorkoutHistoryItem): UnifiedWorkou
   if (item.syncedToStrava) {
     syncStatus.strava = {
       synced: true,
+      status: 'synced',
       id: item.stravaActivityId,
     };
   }
@@ -398,6 +399,7 @@ export function normalizeFollowAlongWorkout(item: FollowAlongWorkout): UnifiedWo
   if (item.garminWorkoutId) {
     syncStatus.garmin = {
       synced: true,
+      status: 'synced',
       id: item.garminWorkoutId,
       syncedAt: item.garminLastSyncAt || undefined,
     };
@@ -405,6 +407,7 @@ export function normalizeFollowAlongWorkout(item: FollowAlongWorkout): UnifiedWo
   if (item.appleWatchWorkoutId) {
     syncStatus.apple = {
       synced: true,
+      status: 'synced',
       id: item.appleWatchWorkoutId,
       syncedAt: item.appleWatchLastSyncAt || undefined,
     };
@@ -412,7 +415,15 @@ export function normalizeFollowAlongWorkout(item: FollowAlongWorkout): UnifiedWo
   if (item.iosCompanionSyncedAt) {
     syncStatus.ios = {
       synced: true,
+      status: 'synced',
       syncedAt: item.iosCompanionSyncedAt,
+    };
+  }
+  if (item.androidCompanionSyncedAt) {
+    syncStatus.android = {
+      synced: true,
+      status: 'synced',
+      syncedAt: item.androidCompanionSyncedAt,
     };
   }
 
