@@ -103,7 +103,7 @@ export function ClearDataModal({ open, onOpenChange, onDataCleared }: ClearDataM
             Clear User Data
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[50vh] overflow-y-auto">
               <p>
                 This will permanently delete all your workout data. Your account,
                 settings, and connected apps will be kept.
