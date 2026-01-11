@@ -92,7 +92,17 @@ export function ClearDataModal({ open, onOpenChange, onDataCleared }: ClearDataM
   };
 
   const isConfirmEnabled = confirmText === 'CLEAR' && !isClearing && !isLoading;
-  const hasData = dataSummary && dataSummary.total_items > 0;
+
+  // Calculate hasData from individual counts (more robust than relying on total_items)
+  const hasData = dataSummary && (
+    dataSummary.workouts > 0 ||
+    dataSummary.workout_completions > 0 ||
+    dataSummary.programs > 0 ||
+    dataSummary.tags > 0 ||
+    dataSummary.follow_along_workouts > 0 ||
+    dataSummary.paired_devices > 0 ||
+    dataSummary.voice_corrections > 0
+  );
 
   return (
     <AlertDialog open={open} onOpenChange={handleClose}>
