@@ -17,6 +17,7 @@ import {
   IntervalLog,
   SetLog,
   SetStatus,
+  IntervalStatus,
   WeightEntry,
 } from '../lib/completions-api';
 import { formatDuration } from './ActivityHistory';
@@ -358,27 +359,76 @@ function ExercisesTable({ intervals }: ExercisesTableProps) {
     );
   }
 
-  // Flatten exercises into rows for the table
+  // AMA-314: Group intervals by exercise name to handle iOS data structure
+  // iOS sends one interval per set with set_number:1, so we need to group
+  // consecutive intervals with the same planned_name and renumber sets
+  type GroupedExercise = {
+    name: string;
+    status: IntervalStatus;
+    sets: Array<SetLog & { intervalDuration?: number }>;
+  };
+
+  const groupedExercises: GroupedExercise[] = [];
+  let currentGroup: GroupedExercise | null = null;
+
+  exercises.forEach((interval) => {
+    const name = interval.planned_name || 'Unknown Exercise';
+
+    // Check if this interval continues the current group (same exercise name)
+    if (currentGroup && currentGroup.name === name) {
+      // Add sets to current group with renumbered set_number
+      const sets = interval.sets || [];
+      sets.forEach((set) => {
+        const nextSetNumber = currentGroup!.sets.length + 1;
+        currentGroup!.sets.push({
+          ...set,
+          set_number: nextSetNumber,
+          intervalDuration: interval.actual_duration_seconds,
+        });
+      });
+    } else {
+      // Start a new group
+      if (currentGroup) {
+        groupedExercises.push(currentGroup);
+      }
+      const sets = interval.sets || [];
+      currentGroup = {
+        name,
+        status: interval.status,
+        sets: sets.map((set, idx) => ({
+          ...set,
+          set_number: idx + 1,
+          intervalDuration: interval.actual_duration_seconds,
+        })),
+      };
+    }
+  });
+
+  // Don't forget the last group
+  if (currentGroup) {
+    groupedExercises.push(currentGroup);
+  }
+
+  // Flatten grouped exercises into rows for the table
   type TableRow = {
     exerciseNumber?: number;
     exerciseName?: string;
     exerciseStatus?: string;
-    set: SetLog;
+    set: SetLog & { intervalDuration?: number };
     isFirstSet: boolean;
     totalSets: number;
   };
 
   const rows: TableRow[] = [];
-  exercises.forEach((interval, idx) => {
-    const sets = interval.sets || [];
-    sets.forEach((set, setIdx) => {
+  groupedExercises.forEach((exercise, exerciseIdx) => {
+    exercise.sets.forEach((set, setIdx) => {
       rows.push({
-        exerciseNumber: setIdx === 0 ? idx + 1 : undefined,
-        exerciseName: setIdx === 0 ? interval.planned_name : undefined,
-        exerciseStatus: setIdx === 0 ? interval.status : undefined,
+        exerciseNumber: setIdx === 0 ? exerciseIdx + 1 : undefined,
+        exerciseName: setIdx === 0 ? exercise.name : undefined,
+        exerciseStatus: setIdx === 0 ? exercise.status : undefined,
         set,
         isFirstSet: setIdx === 0,
-        totalSets: sets.length,
+        totalSets: exercise.sets.length,
       });
     });
   });
@@ -432,9 +482,9 @@ function ExercisesTable({ intervals }: ExercisesTableProps) {
             )}
           </div>
 
-          {/* Time */}
+          {/* Time - AMA-314: Fall back to interval duration if set duration missing */}
           <div style={{ width: 70 }} className="text-center text-muted-foreground">
-            {formatSetDuration(row.set.duration_seconds)}
+            {formatSetDuration(row.set.duration_seconds ?? row.set.intervalDuration)}
           </div>
 
           {/* Weight */}

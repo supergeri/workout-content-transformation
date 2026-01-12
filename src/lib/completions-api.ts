@@ -10,6 +10,30 @@ import { API_URLS } from './config';
 // Use centralized API config
 const MAPPER_API_BASE_URL = API_URLS.MAPPER;
 
+/**
+ * AMA-314: Transform heart rate samples from iOS format to web format.
+ * iOS sends: { timestamp: string, value: number }
+ * Web expects: { t: number, bpm: number }
+ */
+function transformHeartRateSamples(
+  samples: Array<{ timestamp?: string; value?: number; t?: number; bpm?: number }> | undefined
+): Array<{ t: number; bpm: number }> | undefined {
+  if (!samples || samples.length === 0) {
+    return undefined;
+  }
+
+  return samples.map((sample) => {
+    // Already in web format
+    if (typeof sample.t === 'number' && typeof sample.bpm === 'number') {
+      return { t: sample.t, bpm: sample.bpm };
+    }
+    // Convert from iOS format
+    const timestamp = sample.timestamp ? new Date(sample.timestamp).getTime() / 1000 : 0;
+    const bpm = sample.value ?? sample.bpm ?? 0;
+    return { t: timestamp, bpm };
+  });
+}
+
 // Types for workout completions
 export interface WorkoutCompletion {
   id: string;
@@ -216,6 +240,9 @@ export async function fetchWorkoutCompletionById(
 
   const c = data.completion;
 
+  // AMA-314: Transform heart rate samples from iOS format {timestamp, value} to web format {t, bpm}
+  const transformedHRSamples = transformHeartRateSamples(c.heart_rate_samples);
+
   // Transform snake_case from backend to camelCase for frontend
   return {
     id: c.id,
@@ -234,7 +261,7 @@ export async function fetchWorkoutCompletionById(
     source: c.source,
     sourceWorkoutId: c.source_workout_id,
     deviceInfo: c.device_info,
-    heartRateSamples: c.heart_rate_samples,
+    heartRateSamples: transformedHRSamples,
     intervals: c.intervals,
     executionLog: c.execution_log,  // AMA-304: v2 execution log
     createdAt: c.created_at,
