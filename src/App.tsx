@@ -28,6 +28,7 @@ import { MobileCompanion } from './components/MobileCompanion';
 import { BulkImport } from './components/BulkImport';
 import { HelpPage } from './components/help/HelpPage';
 import { ExerciseHistory } from './components/ExerciseHistory';
+import { VolumeAnalytics } from './components/VolumeAnalytics';
 import { PinterestBulkImportModal } from './components/PinterestBulkImportModal';
 import BuildBadge from './components/BuildBadge';
 import { DevSystemStatus } from './components/DevSystemStatus';
@@ -54,7 +55,7 @@ type AppUser = User & {
 };
 
 type WorkflowStep = 'add-sources' | 'structure' | 'validate' | 'export';
-type View = 'home' | 'workflow' | 'profile' | 'analytics' | 'team' | 'settings' | 'strava-enhance' | 'calendar' | 'workouts' | 'mobile-companion' | 'bulk-import' | 'help' | 'exercise-history';
+type View = 'home' | 'workflow' | 'profile' | 'analytics' | 'team' | 'settings' | 'strava-enhance' | 'calendar' | 'workouts' | 'mobile-companion' | 'bulk-import' | 'help' | 'exercise-history' | 'volume-analytics';
 
 export default function App() {
   // Clerk authentication
@@ -1480,6 +1481,20 @@ export default function App() {
                   History
                 </Button>
                 <Button
+                  variant={currentView === 'volume-analytics' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => {
+                    checkUnsavedChanges(() => {
+                      clearWorkflowState();
+                      setCurrentView('volume-analytics');
+                    });
+                  }}
+                  className="gap-2"
+                >
+                  <Activity className="w-4 h-4" />
+                  Volume
+                </Button>
+                <Button
                   variant={currentView === 'team' ? 'default' : 'ghost'}
                   size="sm"
                   onClick={() => {
@@ -1774,6 +1789,10 @@ export default function App() {
 
         {currentView === 'exercise-history' && user && (
           <ExerciseHistory user={user} />
+        )}
+
+        {currentView === 'volume-analytics' && user && (
+          <VolumeAnalytics user={user} />
         )}
 
         {currentView === 'team' && (
