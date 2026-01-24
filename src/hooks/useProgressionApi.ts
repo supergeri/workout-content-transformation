@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   progressionApi,
+  ProgressionApiError,
   ExercisesWithHistoryResponse,
   ExerciseHistory,
   LastWeight,
@@ -226,8 +227,8 @@ export function useLastWeight(options: UseLastWeightOptions): UseLastWeightResul
       const result = await progressionApi.getLastWeight(exerciseId);
       setData(result);
     } catch (err) {
-      // 404 is expected when no history exists
-      if (err instanceof Error && err.message.includes('404')) {
+      // 404 is expected when no history exists - not an error condition
+      if (err instanceof ProgressionApiError && err.isNotFound()) {
         setData(null);
       } else {
         setError(err instanceof Error ? err : new Error('Failed to fetch last weight'));
@@ -388,7 +389,9 @@ export function useVolumeAnalytics(
 // RE-EXPORTS
 // =============================================================================
 
-// Re-export types for convenience
+// Re-export types and error class for convenience
+export { ProgressionApiError } from '../lib/progression-api';
+
 export type {
   ExerciseHistory,
   ExercisesWithHistoryResponse,

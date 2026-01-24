@@ -79,32 +79,47 @@ function validateSchema(schema: object, data: unknown): { valid: boolean; errors
 }
 
 // =============================================================================
-// Mock Auth Token (for testing against real API)
+// Auth Configuration for Contract Tests
 // =============================================================================
 
 /**
- * Get an auth token for the test user.
- * In a real implementation, this would authenticate with Clerk.
+ * Get authentication headers for contract tests.
  *
- * For local development, you may need to:
- * 1. Use a service role key that bypasses auth
- * 2. Set up a test user in Clerk and get a real token
- * 3. Mock the auth at the API level
+ * SECURITY NOTES:
+ * ---------------
+ * 1. These tests should ONLY run in CI or local development environments.
+ * 2. The x-test-user-id header is ONLY accepted by mapper-api when
+ *    running in test mode (NODE_ENV=test or TEST_MODE=true).
+ * 3. In production, all requests must include a valid Clerk JWT.
+ *
+ * For CI/CD:
+ * - Set VITE_E2E_TEST_TOKEN environment variable with a test user JWT
+ * - Or configure mapper-api to accept x-test-user-id in test mode
+ *
+ * For local development:
+ * - Run mapper-api with TEST_MODE=true to accept x-test-user-id header
+ * - Or use a real Clerk JWT from a test user
+ *
+ * DO NOT use VITE_SUPABASE_SERVICE_ROLE_KEY in frontend tests as it
+ * bypasses Row Level Security and could mask authorization bugs.
  */
 async function getAuthHeaders(): Promise<HeadersInit> {
-  // TODO: Replace with real auth when running against authenticated endpoints
-  // For now, we assume the API allows unauthenticated access in test mode
-  // or we use a service key
-  const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-
-  if (serviceKey) {
+  // Option 1: Use a test JWT token (preferred for CI)
+  const testToken = import.meta.env.VITE_E2E_TEST_TOKEN;
+  if (testToken) {
     return {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${testToken}`,
     };
   }
 
-  // Fallback for local development without auth
+  // Option 2: Use test-mode header (only works when API is in test mode)
+  // mapper-api must have TEST_MODE=true or NODE_ENV=test to accept this
+  console.warn(
+    '[Contract Tests] No VITE_E2E_TEST_TOKEN found. Using x-test-user-id header.\n' +
+    'Ensure mapper-api is running with TEST_MODE=true for this to work.'
+  );
+
   return {
     'Content-Type': 'application/json',
     'x-test-user-id': 'e2e-test-user-001',

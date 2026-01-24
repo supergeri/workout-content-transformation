@@ -5,13 +5,23 @@
  * TypeScript objects (camelCase) for comparison testing.
  */
 
+import {
+  EXERCISE_IDS,
+  UNKNOWN_EXERCISE_ID,
+  DEFAULT_WEIGHT_UNIT,
+  DEFAULT_ONE_RM_FORMULA,
+} from '../../../test/fixtures/progression-constants';
+
+// Re-export for convenience
+export { UNKNOWN_EXERCISE_ID };
+
 // =============================================================================
 // Raw API Responses (snake_case - as returned from mapper-api)
 // =============================================================================
 
 export const API_RESPONSES = {
   exerciseHistory: {
-    exercise_id: 'barbell-bench-press',
+    exercise_id: EXERCISE_IDS.BENCH_PRESS,
     exercise_name: 'Barbell Bench Press',
     supports_1rm: true,
     one_rm_formula: 'brzycki',

@@ -19,17 +19,41 @@ import {
 } from '../useProgressionApi';
 
 // Mock the progression API module
-vi.mock('../../lib/progression-api', () => ({
-  progressionApi: {
-    getExercisesWithHistory: vi.fn(),
-    getExerciseHistory: vi.fn(),
-    getLastWeight: vi.fn(),
-    getPersonalRecords: vi.fn(),
-    getVolumeAnalytics: vi.fn(),
-  },
-}));
+// Note: vi.mock is hoisted, so we must define the mock class inline
+vi.mock('../../lib/progression-api', () => {
+  // Define the mock class inside the factory to avoid hoisting issues
+  class MockProgressionApiError extends Error {
+    constructor(
+      public readonly statusCode: number,
+      message: string,
+      public readonly detail?: string
+    ) {
+      super(message);
+      this.name = 'ProgressionApiError';
+    }
 
-import { progressionApi } from '../../lib/progression-api';
+    isNotFound(): boolean {
+      return this.statusCode === 404;
+    }
+
+    isUnauthorized(): boolean {
+      return this.statusCode === 401;
+    }
+  }
+
+  return {
+    progressionApi: {
+      getExercisesWithHistory: vi.fn(),
+      getExerciseHistory: vi.fn(),
+      getLastWeight: vi.fn(),
+      getPersonalRecords: vi.fn(),
+      getVolumeAnalytics: vi.fn(),
+    },
+    ProgressionApiError: MockProgressionApiError,
+  };
+});
+
+import { progressionApi, ProgressionApiError } from '../../lib/progression-api';
 
 // Type the mocked functions
 const mockGetExercisesWithHistory = vi.mocked(progressionApi.getExercisesWithHistory);
@@ -398,7 +422,9 @@ describe('useProgressionApi hooks', () => {
     });
 
     it('should set data to null on 404 without error', async () => {
-      mockGetLastWeight.mockRejectedValueOnce(new Error('404: No weight history found'));
+      mockGetLastWeight.mockRejectedValueOnce(
+        new ProgressionApiError(404, 'No weight history found', 'No weight history found')
+      );
 
       const { result } = renderHook(() =>
         useLastWeight({ exerciseId: 'unknown-exercise' })

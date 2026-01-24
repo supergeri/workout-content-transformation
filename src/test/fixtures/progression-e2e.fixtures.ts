@@ -7,6 +7,22 @@
  * See: /supabase/seed/progression-e2e-seed.sql
  */
 
+import {
+  EXERCISE_IDS,
+  UNKNOWN_EXERCISE_ID,
+  INVALID_EXERCISE_ID,
+  TEST_USER_ID,
+  DEFAULT_WEIGHT_UNIT,
+} from './progression-constants';
+
+// Re-export constants for convenience
+export {
+  EXERCISE_IDS,
+  UNKNOWN_EXERCISE_ID,
+  INVALID_EXERCISE_ID,
+  TEST_USER_ID,
+};
+
 // =============================================================================
 // Test User
 // =============================================================================
@@ -27,7 +43,7 @@ export const E2E_TEST_USER = {
    * Profile ID in Supabase profiles table.
    * Used for direct database operations.
    */
-  profileId: 'e2e-test-user-001',
+  profileId: TEST_USER_ID,
 
   /**
    * Display name for the test user.
@@ -45,7 +61,7 @@ export const E2E_TEST_USER = {
  */
 export const SEEDED_EXERCISES = {
   benchPress: {
-    exerciseId: 'barbell-bench-press',
+    exerciseId: EXERCISE_IDS.BENCH_PRESS,
     exerciseName: 'Barbell Bench Press',
     muscleGroup: 'chest',
     /**
@@ -60,7 +76,7 @@ export const SEEDED_EXERCISES = {
   },
 
   squat: {
-    exerciseId: 'barbell-squat',
+    exerciseId: EXERCISE_IDS.SQUAT,
     exerciseName: 'Barbell Squat',
     muscleGroup: 'legs',
     expectedSessionCount: 1,
@@ -68,7 +84,7 @@ export const SEEDED_EXERCISES = {
   },
 
   pullUp: {
-    exerciseId: 'pull-up',
+    exerciseId: EXERCISE_IDS.PULL_UP,
     exerciseName: 'Pull Up',
     muscleGroup: 'back',
     expectedSessionCount: 1,
@@ -92,11 +108,11 @@ export const SEEDED_SESSIONS = {
     completionId: 'comp-e2e-001',
     workoutDate: '2026-01-15',
     workoutName: 'Push Day',
-    exerciseId: 'barbell-bench-press',
+    exerciseId: EXERCISE_IDS.BENCH_PRESS,
     sets: [
-      { setNumber: 1, weight: 135, reps: 10, weightUnit: 'lbs' },
-      { setNumber: 2, weight: 155, reps: 8, weightUnit: 'lbs' },
-      { setNumber: 3, weight: 175, reps: 6, weightUnit: 'lbs' },
+      { setNumber: 1, weight: 135, reps: 10, weightUnit: DEFAULT_WEIGHT_UNIT },
+      { setNumber: 2, weight: 155, reps: 8, weightUnit: DEFAULT_WEIGHT_UNIT },
+      { setNumber: 3, weight: 175, reps: 6, weightUnit: DEFAULT_WEIGHT_UNIT },
     ],
     /**
      * Expected best 1RM from this session.
@@ -110,9 +126,9 @@ export const SEEDED_SESSIONS = {
     completionId: 'comp-e2e-002',
     workoutDate: '2026-01-12',
     workoutName: 'Upper Body',
-    exerciseId: 'barbell-bench-press',
+    exerciseId: EXERCISE_IDS.BENCH_PRESS,
     sets: [
-      { setNumber: 1, weight: 135, reps: 8, weightUnit: 'lbs' },
+      { setNumber: 1, weight: 135, reps: 8, weightUnit: DEFAULT_WEIGHT_UNIT },
     ],
     expectedBest1Rm: 166,
     expectedMaxWeight: 135,
@@ -122,9 +138,9 @@ export const SEEDED_SESSIONS = {
     completionId: 'comp-e2e-003',
     workoutDate: '2026-01-12',
     workoutName: 'Upper Body',
-    exerciseId: 'barbell-squat',
+    exerciseId: EXERCISE_IDS.SQUAT,
     sets: [
-      { setNumber: 1, weight: 225, reps: 5, weightUnit: 'lbs' },
+      { setNumber: 1, weight: 225, reps: 5, weightUnit: DEFAULT_WEIGHT_UNIT },
     ],
     /**
      * 225 lbs x 5 reps = ~253 lbs (Brzycki)

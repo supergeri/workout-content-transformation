@@ -34,6 +34,108 @@ import type {
 const API_BASE_URL = API_URLS.MAPPER;
 
 // =============================================================================
+// Error Types
+// =============================================================================
+
+/**
+ * Custom error class for Progression API errors.
+ * Includes HTTP status code for proper error handling in consumers.
+ */
+export class ProgressionApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    message: string,
+    public readonly detail?: string
+  ) {
+    super(message);
+    this.name = 'ProgressionApiError';
+  }
+
+  /**
+   * Check if this is a "not found" error (404).
+   */
+  isNotFound(): boolean {
+    return this.statusCode === 404;
+  }
+
+  /**
+   * Check if this is an authentication error (401).
+   */
+  isUnauthorized(): boolean {
+    return this.statusCode === 401;
+  }
+}
+
+// =============================================================================
+// Runtime Type Helpers
+// =============================================================================
+
+/**
+ * Safely extract a string value from an unknown field.
+ */
+function asString(value: unknown, defaultValue: string = ''): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return defaultValue;
+  return String(value);
+}
+
+/**
+ * Safely extract a nullable string value from an unknown field.
+ */
+function asStringOrNull(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return null;
+  return String(value);
+}
+
+/**
+ * Safely extract a number value from an unknown field.
+ */
+function asNumber(value: unknown, defaultValue: number = 0): number {
+  if (typeof value === 'number' && !isNaN(value)) return value;
+  if (value === null || value === undefined) return defaultValue;
+  const parsed = Number(value);
+  return isNaN(parsed) ? defaultValue : parsed;
+}
+
+/**
+ * Safely extract a nullable number value from an unknown field.
+ */
+function asNumberOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && !isNaN(value)) return value;
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Safely extract a boolean value from an unknown field.
+ */
+function asBoolean(value: unknown, defaultValue: boolean = false): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === null || value === undefined) return defaultValue;
+  return Boolean(value);
+}
+
+/**
+ * Safely extract an array from an unknown field.
+ */
+function asArray(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value as Record<string, unknown>[];
+  return [];
+}
+
+/**
+ * Safely extract an object from an unknown field.
+ */
+function asObject(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+// =============================================================================
 // Response Transformers (snake_case API -> camelCase TypeScript)
 // =============================================================================
 
@@ -42,14 +144,14 @@ const API_BASE_URL = API_URLS.MAPPER;
  */
 function transformSet(apiSet: Record<string, unknown>): SetDetail {
   return {
-    setNumber: (apiSet.set_number as number) ?? 0,
-    weight: apiSet.weight as number | null,
-    weightUnit: (apiSet.weight_unit as string) ?? 'lbs',
-    repsCompleted: apiSet.reps_completed as number | null,
-    repsPlanned: apiSet.reps_planned as number | null,
-    status: (apiSet.status as string) ?? 'completed',
-    estimated1Rm: apiSet.estimated_1rm as number | null,
-    isPr: (apiSet.is_pr as boolean) ?? false,
+    setNumber: asNumber(apiSet.set_number, 0),
+    weight: asNumberOrNull(apiSet.weight),
+    weightUnit: asString(apiSet.weight_unit, 'lbs'),
+    repsCompleted: asNumberOrNull(apiSet.reps_completed),
+    repsPlanned: asNumberOrNull(apiSet.reps_planned),
+    status: asString(apiSet.status, 'completed'),
+    estimated1Rm: asNumberOrNull(apiSet.estimated_1rm),
+    isPr: asBoolean(apiSet.is_pr, false),
   };
 }
 
@@ -57,16 +159,15 @@ function transformSet(apiSet: Record<string, unknown>): SetDetail {
  * Transform a session from API response to TypeScript type.
  */
 function transformSession(apiSession: Record<string, unknown>): Session {
-  const sets = (apiSession.sets as Record<string, unknown>[]) ?? [];
   return {
-    completionId: (apiSession.completion_id as string) ?? '',
-    workoutDate: (apiSession.workout_date as string) ?? '',
-    workoutName: apiSession.workout_name as string | null,
-    exerciseName: (apiSession.exercise_name as string) ?? '',
-    sets: sets.map(transformSet),
-    sessionBest1Rm: apiSession.session_best_1rm as number | null,
-    sessionMaxWeight: apiSession.session_max_weight as number | null,
-    sessionTotalVolume: apiSession.session_total_volume as number | null,
+    completionId: asString(apiSession.completion_id),
+    workoutDate: asString(apiSession.workout_date),
+    workoutName: asStringOrNull(apiSession.workout_name),
+    exerciseName: asString(apiSession.exercise_name),
+    sets: asArray(apiSession.sets).map(transformSet),
+    sessionBest1Rm: asNumberOrNull(apiSession.session_best_1rm),
+    sessionMaxWeight: asNumberOrNull(apiSession.session_max_weight),
+    sessionTotalVolume: asNumberOrNull(apiSession.session_total_volume),
   };
 }
 
@@ -74,16 +175,15 @@ function transformSession(apiSession: Record<string, unknown>): Session {
  * Transform exercise history from API response to TypeScript type.
  */
 function transformExerciseHistory(apiResponse: Record<string, unknown>): ExerciseHistory {
-  const sessions = (apiResponse.sessions as Record<string, unknown>[]) ?? [];
   return {
-    exerciseId: (apiResponse.exercise_id as string) ?? '',
-    exerciseName: (apiResponse.exercise_name as string) ?? '',
-    supports1Rm: (apiResponse.supports_1rm as boolean) ?? false,
-    oneRmFormula: (apiResponse.one_rm_formula as string) ?? 'brzycki',
-    sessions: sessions.map(transformSession),
-    totalSessions: (apiResponse.total_sessions as number) ?? 0,
-    allTimeBest1Rm: apiResponse.all_time_best_1rm as number | null,
-    allTimeMaxWeight: apiResponse.all_time_max_weight as number | null,
+    exerciseId: asString(apiResponse.exercise_id),
+    exerciseName: asString(apiResponse.exercise_name),
+    supports1Rm: asBoolean(apiResponse.supports_1rm, false),
+    oneRmFormula: asString(apiResponse.one_rm_formula, 'brzycki'),
+    sessions: asArray(apiResponse.sessions).map(transformSession),
+    totalSessions: asNumber(apiResponse.total_sessions, 0),
+    allTimeBest1Rm: asNumberOrNull(apiResponse.all_time_best_1rm),
+    allTimeMaxWeight: asNumberOrNull(apiResponse.all_time_max_weight),
   };
 }
 
@@ -92,9 +192,9 @@ function transformExerciseHistory(apiResponse: Record<string, unknown>): Exercis
  */
 function transformExerciseWithHistory(apiExercise: Record<string, unknown>): ExerciseWithHistory {
   return {
-    exerciseId: (apiExercise.exercise_id as string) ?? '',
-    exerciseName: (apiExercise.exercise_name as string) ?? '',
-    sessionCount: (apiExercise.session_count as number) ?? 0,
+    exerciseId: asString(apiExercise.exercise_id),
+    exerciseName: asString(apiExercise.exercise_name),
+    sessionCount: asNumber(apiExercise.session_count, 0),
   };
 }
 
@@ -102,10 +202,9 @@ function transformExerciseWithHistory(apiExercise: Record<string, unknown>): Exe
  * Transform exercises with history response from API.
  */
 function transformExercisesWithHistory(apiResponse: Record<string, unknown>): ExercisesWithHistoryResponse {
-  const exercises = (apiResponse.exercises as Record<string, unknown>[]) ?? [];
   return {
-    exercises: exercises.map(transformExerciseWithHistory),
-    total: (apiResponse.total as number) ?? 0,
+    exercises: asArray(apiResponse.exercises).map(transformExerciseWithHistory),
+    total: asNumber(apiResponse.total, 0),
   };
 }
 
@@ -113,15 +212,18 @@ function transformExercisesWithHistory(apiResponse: Record<string, unknown>): Ex
  * Transform a personal record from API response.
  */
 function transformPersonalRecord(apiRecord: Record<string, unknown>): PersonalRecord {
+  const recordType = asString(apiRecord.record_type, '1rm');
   return {
-    exerciseId: (apiRecord.exercise_id as string) ?? '',
-    exerciseName: (apiRecord.exercise_name as string) ?? '',
-    recordType: (apiRecord.record_type as RecordType) ?? '1rm',
-    value: (apiRecord.value as number) ?? 0,
-    unit: (apiRecord.unit as string) ?? 'lbs',
-    achievedAt: apiRecord.achieved_at as string | null,
-    completionId: apiRecord.completion_id as string | null,
-    details: apiRecord.details as Record<string, unknown> | null,
+    exerciseId: asString(apiRecord.exercise_id),
+    exerciseName: asString(apiRecord.exercise_name),
+    recordType: recordType as RecordType,
+    value: asNumber(apiRecord.value, 0),
+    unit: asString(apiRecord.unit, 'lbs'),
+    achievedAt: asStringOrNull(apiRecord.achieved_at),
+    completionId: asStringOrNull(apiRecord.completion_id),
+    details: apiRecord.details !== null && typeof apiRecord.details === 'object'
+      ? (apiRecord.details as Record<string, unknown>)
+      : null,
   };
 }
 
@@ -129,10 +231,9 @@ function transformPersonalRecord(apiRecord: Record<string, unknown>): PersonalRe
  * Transform personal records response from API.
  */
 function transformPersonalRecords(apiResponse: Record<string, unknown>): PersonalRecordsResponse {
-  const records = (apiResponse.records as Record<string, unknown>[]) ?? [];
   return {
-    records: records.map(transformPersonalRecord),
-    exerciseId: apiResponse.exercise_id as string | null,
+    records: asArray(apiResponse.records).map(transformPersonalRecord),
+    exerciseId: asStringOrNull(apiResponse.exercise_id),
   };
 }
 
@@ -141,13 +242,13 @@ function transformPersonalRecords(apiResponse: Record<string, unknown>): Persona
  */
 function transformLastWeight(apiResponse: Record<string, unknown>): LastWeight {
   return {
-    exerciseId: (apiResponse.exercise_id as string) ?? '',
-    exerciseName: (apiResponse.exercise_name as string) ?? '',
-    weight: (apiResponse.weight as number) ?? 0,
-    weightUnit: (apiResponse.weight_unit as string) ?? 'lbs',
-    repsCompleted: (apiResponse.reps_completed as number) ?? 0,
-    workoutDate: (apiResponse.workout_date as string) ?? '',
-    completionId: (apiResponse.completion_id as string) ?? '',
+    exerciseId: asString(apiResponse.exercise_id),
+    exerciseName: asString(apiResponse.exercise_name),
+    weight: asNumber(apiResponse.weight, 0),
+    weightUnit: asString(apiResponse.weight_unit, 'lbs'),
+    repsCompleted: asNumber(apiResponse.reps_completed, 0),
+    workoutDate: asString(apiResponse.workout_date),
+    completionId: asString(apiResponse.completion_id),
   };
 }
 
@@ -156,11 +257,11 @@ function transformLastWeight(apiResponse: Record<string, unknown>): LastWeight {
  */
 function transformVolumeDataPoint(apiPoint: Record<string, unknown>): VolumeDataPoint {
   return {
-    period: (apiPoint.period as string) ?? '',
-    muscleGroup: (apiPoint.muscle_group as string) ?? '',
-    totalVolume: (apiPoint.total_volume as number) ?? 0,
-    totalSets: (apiPoint.total_sets as number) ?? 0,
-    totalReps: (apiPoint.total_reps as number) ?? 0,
+    period: asString(apiPoint.period),
+    muscleGroup: asString(apiPoint.muscle_group),
+    totalVolume: asNumber(apiPoint.total_volume, 0),
+    totalSets: asNumber(apiPoint.total_sets, 0),
+    totalReps: asNumber(apiPoint.total_reps, 0),
   };
 }
 
@@ -168,23 +269,25 @@ function transformVolumeDataPoint(apiPoint: Record<string, unknown>): VolumeData
  * Transform volume analytics response from API.
  */
 function transformVolumeAnalytics(apiResponse: Record<string, unknown>): VolumeAnalytics {
-  const data = (apiResponse.data as Record<string, unknown>[]) ?? [];
-  const period = (apiResponse.period as Record<string, unknown>) ?? {};
-  const summary = (apiResponse.summary as Record<string, unknown>) ?? {};
+  const period = asObject(apiResponse.period);
+  const summary = asObject(apiResponse.summary);
+  const breakdown = summary.muscle_group_breakdown;
 
   return {
-    data: data.map(transformVolumeDataPoint),
+    data: asArray(apiResponse.data).map(transformVolumeDataPoint),
     summary: {
-      totalVolume: (summary.total_volume as number) ?? 0,
-      totalSets: (summary.total_sets as number) ?? 0,
-      totalReps: (summary.total_reps as number) ?? 0,
-      muscleGroupBreakdown: (summary.muscle_group_breakdown as Record<string, number>) ?? {},
+      totalVolume: asNumber(summary.total_volume, 0),
+      totalSets: asNumber(summary.total_sets, 0),
+      totalReps: asNumber(summary.total_reps, 0),
+      muscleGroupBreakdown: breakdown !== null && typeof breakdown === 'object' && !Array.isArray(breakdown)
+        ? (breakdown as Record<string, number>)
+        : {},
     },
     period: {
-      startDate: (period.start_date as string) ?? '',
-      endDate: (period.end_date as string) ?? '',
+      startDate: asString(period.start_date),
+      endDate: asString(period.end_date),
     },
-    granularity: (apiResponse.granularity as VolumeAnalytics['granularity']) ?? 'daily',
+    granularity: asString(apiResponse.granularity, 'daily') as VolumeAnalytics['granularity'],
   };
 }
 
@@ -208,7 +311,12 @@ class ProgressionApiClient {
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(error.detail || `API error: ${response.status}`);
+      const detail = typeof error.detail === 'string' ? error.detail : 'Unknown error';
+      throw new ProgressionApiError(
+        response.status,
+        detail || `API error: ${response.status}`,
+        detail
+      );
     }
     return response.json();
   }
@@ -369,6 +477,9 @@ export const progressionApi = new ProgressionApiClient();
 
 // Export class for testing
 export { ProgressionApiClient };
+
+// Export error class for type checking in consumers
+export { ProgressionApiError };
 
 // Re-export types for convenience
 export type {

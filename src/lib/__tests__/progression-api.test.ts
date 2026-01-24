@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ProgressionApiClient } from '../progression-api';
+import { ProgressionApiClient, ProgressionApiError } from '../progression-api';
 import { API_RESPONSES, EXPECTED_TRANSFORMS, EDGE_CASES, ERROR_RESPONSES } from './fixtures/progression.fixtures';
 import { createMockResponse, createMockErrorResponse, createMockMalformedResponse } from './helpers/mockResponse';
 
@@ -83,15 +83,24 @@ describe('progression-api', () => {
       expect(result.total).toBe(0);
     });
 
-    it('should throw error with detail on 401', async () => {
+    it('should throw ProgressionApiError with statusCode on 401', async () => {
       mockAuthFetch.mockResolvedValueOnce(
         createMockErrorResponse(401, ERROR_RESPONSES.unauthorized.detail)
       );
 
-      await expect(client.getExercisesWithHistory()).rejects.toThrow('Not authenticated');
+      let caughtError: unknown;
+      try {
+        await client.getExercisesWithHistory();
+      } catch (err) {
+        caughtError = err;
+      }
+
+      expect(caughtError).toBeInstanceOf(ProgressionApiError);
+      expect((caughtError as ProgressionApiError).statusCode).toBe(401);
+      expect((caughtError as ProgressionApiError).isUnauthorized()).toBe(true);
     });
 
-    it('should throw error with detail on 500', async () => {
+    it('should throw ProgressionApiError with statusCode on 500', async () => {
       mockAuthFetch.mockResolvedValueOnce(
         createMockErrorResponse(500, ERROR_RESPONSES.serverError.detail)
       );
@@ -525,15 +534,24 @@ describe('progression-api', () => {
   // ===========================================================================
 
   describe('error handling', () => {
-    it('should extract detail from error response', async () => {
+    it('should throw ProgressionApiError with statusCode and detail', async () => {
       mockAuthFetch.mockResolvedValueOnce(
         createMockErrorResponse(400, 'Custom error message')
       );
 
-      await expect(client.getExercisesWithHistory()).rejects.toThrow('Custom error message');
+      try {
+        await client.getExercisesWithHistory();
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProgressionApiError);
+        const apiErr = err as ProgressionApiError;
+        expect(apiErr.statusCode).toBe(400);
+        expect(apiErr.message).toBe('Custom error message');
+        expect(apiErr.detail).toBe('Custom error message');
+      }
     });
 
-    it('should fall back to status code when no detail', async () => {
+    it('should include statusCode for all errors', async () => {
       const response = {
         ok: false,
         status: 500,
@@ -543,7 +561,13 @@ describe('progression-api', () => {
       } as Response;
       mockAuthFetch.mockResolvedValueOnce(response);
 
-      await expect(client.getExercisesWithHistory()).rejects.toThrow('API error: 500');
+      try {
+        await client.getExercisesWithHistory();
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProgressionApiError);
+        expect((err as ProgressionApiError).statusCode).toBe(500);
+      }
     });
 
     it('should handle malformed JSON in error response', async () => {
@@ -556,7 +580,29 @@ describe('progression-api', () => {
       } as Response;
       mockAuthFetch.mockResolvedValueOnce(response);
 
-      await expect(client.getExercisesWithHistory()).rejects.toThrow('Unknown error');
+      try {
+        await client.getExercisesWithHistory();
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProgressionApiError);
+        expect((err as ProgressionApiError).statusCode).toBe(500);
+        expect((err as ProgressionApiError).message).toBe('Unknown error');
+      }
+    });
+
+    it('should provide isNotFound() helper', async () => {
+      mockAuthFetch.mockResolvedValueOnce(
+        createMockErrorResponse(404, 'Exercise not found')
+      );
+
+      try {
+        await client.getExerciseHistory({ exerciseId: 'unknown' });
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProgressionApiError);
+        expect((err as ProgressionApiError).isNotFound()).toBe(true);
+        expect((err as ProgressionApiError).isUnauthorized()).toBe(false);
+      }
     });
   });
 
