@@ -30,6 +30,7 @@ import { HelpPage } from './components/help/HelpPage';
 import { ExerciseHistory } from './components/ExerciseHistory';
 import { VolumeAnalytics } from './components/VolumeAnalytics';
 import { PinterestBulkImportModal } from './components/PinterestBulkImportModal';
+import { ProgramDetail } from './components/ProgramDetail';
 import BuildBadge from './components/BuildBadge';
 import { DevSystemStatus } from './components/DevSystemStatus';
 import { WorkoutStructure, ExportFormats, ValidationResponse, WorkoutType } from './types/workout';
@@ -55,7 +56,7 @@ type AppUser = User & {
 };
 
 type WorkflowStep = 'add-sources' | 'structure' | 'validate' | 'export';
-type View = 'home' | 'workflow' | 'profile' | 'analytics' | 'team' | 'settings' | 'strava-enhance' | 'calendar' | 'workouts' | 'mobile-companion' | 'bulk-import' | 'help' | 'exercise-history' | 'volume-analytics';
+type View = 'home' | 'workflow' | 'profile' | 'analytics' | 'team' | 'settings' | 'strava-enhance' | 'calendar' | 'workouts' | 'mobile-companion' | 'bulk-import' | 'help' | 'exercise-history' | 'volume-analytics' | 'program-detail';
 
 export default function App() {
   // Clerk authentication
@@ -83,6 +84,8 @@ export default function App() {
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [workoutSaved, setWorkoutSaved] = useState(false);
   const [bulkImportType, setBulkImportType] = useState<BulkInputType | undefined>(undefined);
+  // Training program detail view state
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   // Pinterest bulk import modal state
   const [pinterestBulkModal, setPinterestBulkModal] = useState<{
     open: boolean;
@@ -1917,6 +1920,10 @@ export default function App() {
               // Delete is handled internally by UnifiedWorkouts
               console.log('Workout deleted:', id);
             }}
+            onViewProgram={(programId) => {
+              setSelectedProgramId(programId);
+              setCurrentView('program-detail');
+            }}
           />
         )}
 
@@ -1938,6 +1945,21 @@ export default function App() {
             onViewCalendar={() => {
               setBulkImportType(undefined);
               setCurrentView('calendar');
+            }}
+          />
+        )}
+
+        {currentView === 'program-detail' && selectedProgramId && (
+          <ProgramDetail
+            programId={selectedProgramId}
+            userId={user.id}
+            onBack={() => {
+              setSelectedProgramId(null);
+              setCurrentView('workouts');
+            }}
+            onDeleted={() => {
+              setSelectedProgramId(null);
+              setCurrentView('workouts');
             }}
           />
         )}
