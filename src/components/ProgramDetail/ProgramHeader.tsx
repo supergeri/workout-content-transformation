@@ -26,10 +26,10 @@ export function ProgramHeader({
   onDelete,
   isLoading,
 }: ProgramHeaderProps) {
-  // Calculate progress
-  const progressPercent = Math.round(
-    ((program.current_week - 1) / program.duration_weeks) * 100
-  );
+  // Calculate progress (handle division by zero, show progress as weeks completed)
+  const progressPercent = program.duration_weeks > 0
+    ? Math.round((program.current_week / program.duration_weeks) * 100)
+    : 0;
 
   // Count completed workouts in current week
   const currentWeekData = program.weeks.find(

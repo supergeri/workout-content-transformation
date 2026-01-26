@@ -270,4 +270,46 @@ describe('WeeklyCalendar', () => {
       expect(nextButton).not.toBeDisabled();
     });
   });
+
+  describe('Sparse Week Navigation', () => {
+    // mockTrainingProgram has weeks [1, 2, 4] - week 3 is missing
+    it('should navigate from week 2 to week 4 (skipping non-existent week 3)', () => {
+      render(<WeeklyCalendar {...defaultProps} selectedWeekNumber={2} />);
+
+      const buttons = screen.getAllByRole('button');
+      const nextButton = buttons.find((btn) => btn.querySelector('.lucide-chevron-right'));
+      fireEvent.click(nextButton!);
+
+      // Should call with week 4, not week 3
+      expect(mockOnSelectWeek).toHaveBeenCalledWith(4);
+    });
+
+    it('should navigate from week 4 back to week 2 (skipping non-existent week 3)', () => {
+      render(<WeeklyCalendar {...defaultProps} selectedWeekNumber={4} />);
+
+      const buttons = screen.getAllByRole('button');
+      const prevButton = buttons.find((btn) => btn.querySelector('.lucide-chevron-left'));
+      fireEvent.click(prevButton!);
+
+      // Should call with week 2, not week 3
+      expect(mockOnSelectWeek).toHaveBeenCalledWith(2);
+    });
+
+    it('should disable prev button on first week regardless of week_number', () => {
+      render(<WeeklyCalendar {...defaultProps} selectedWeekNumber={1} />);
+
+      const buttons = screen.getAllByRole('button');
+      const prevButton = buttons.find((btn) => btn.querySelector('.lucide-chevron-left'));
+      expect(prevButton).toBeDisabled();
+    });
+
+    it('should disable next button on last week regardless of week_number', () => {
+      // Week 4 is the last in the array even though duration_weeks is 8
+      render(<WeeklyCalendar {...defaultProps} selectedWeekNumber={4} />);
+
+      const buttons = screen.getAllByRole('button');
+      const nextButton = buttons.find((btn) => btn.querySelector('.lucide-chevron-right'));
+      expect(nextButton).toBeDisabled();
+    });
+  });
 });

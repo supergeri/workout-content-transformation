@@ -196,6 +196,7 @@ export function useProgramDetailApi({
     async (workoutId: string, isCompleted: boolean = true): Promise<boolean> => {
       if (!userId) return false;
 
+      setLoading(true);
       try {
         const success = await markWorkoutCompleteApi(workoutId, userId, isCompleted);
         if (success) {
@@ -206,9 +207,11 @@ export function useProgramDetailApi({
         console.error('[useProgramDetailApi] Error marking workout complete:', err);
         setError(err instanceof Error ? err.message : 'Failed to update workout');
         return false;
+      } finally {
+        setLoading(false);
       }
     },
-    [userId, markWorkoutCompleteInContext, setError]
+    [userId, markWorkoutCompleteInContext, setLoading, setError]
   );
 
   return {

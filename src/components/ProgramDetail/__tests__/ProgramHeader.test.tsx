@@ -89,8 +89,17 @@ describe('ProgramHeader', () => {
 
     it('should render progress percentage', () => {
       render(<ProgramHeader {...defaultProps} />);
-      // Week 2 of 8 = (2-1)/8 = 12.5%, rounds to 13%
-      expect(screen.getByText(/% complete/)).toBeInTheDocument();
+      // Week 2 of 8 = 2/8 = 25%
+      expect(screen.getByText(/25% complete/)).toBeInTheDocument();
+    });
+
+    it('should show 0% progress when duration_weeks is 0', () => {
+      const programWithZeroDuration = {
+        ...mockTrainingProgram,
+        duration_weeks: 0,
+      };
+      render(<ProgramHeader {...defaultProps} program={programWithZeroDuration} />);
+      expect(screen.getByText(/0% complete/)).toBeInTheDocument();
     });
 
     it('should render workout completion count', () => {

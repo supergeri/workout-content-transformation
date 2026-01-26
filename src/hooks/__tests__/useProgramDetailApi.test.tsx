@@ -421,6 +421,39 @@ describe('useProgramDetailApi', () => {
         true
       );
     });
+
+    it('should set loading state during markWorkoutComplete', async () => {
+      // Create a delayed response to capture loading state
+      mockMarkWorkoutComplete.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(true), 100))
+      );
+
+      const { result } = renderHook(
+        () => useProgramDetailApi(defaultOptions),
+        { wrapper }
+      );
+
+      await waitFor(() => {
+        expect(result.current.program).toBeTruthy();
+      });
+
+      // Start the operation
+      let markCompletePromise: Promise<boolean>;
+      act(() => {
+        markCompletePromise = result.current.markWorkoutComplete(TEST_WORKOUT_ID, true);
+      });
+
+      // Should be loading during the operation
+      expect(result.current.isLoading).toBe(true);
+
+      // Wait for completion
+      await act(async () => {
+        await markCompletePromise;
+      });
+
+      // Should no longer be loading
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
   describe('selectWeek and selectWorkout', () => {

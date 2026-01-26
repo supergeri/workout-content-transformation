@@ -58,18 +58,27 @@ export function WeeklyCalendar({
     }
   });
 
-  // Navigation handlers
+  // Find current week index in the weeks array (handles sparse week numbers)
+  const currentWeekIndex = program.weeks.findIndex(
+    (w) => w.week_number === selectedWeekNumber
+  );
+
+  // Navigation handlers - navigate by array index to handle sparse weeks
   const goToPrevWeek = () => {
-    if (selectedWeekNumber > 1) {
-      onSelectWeek(selectedWeekNumber - 1);
+    if (currentWeekIndex > 0) {
+      onSelectWeek(program.weeks[currentWeekIndex - 1].week_number);
     }
   };
 
   const goToNextWeek = () => {
-    if (selectedWeekNumber < program.weeks.length) {
-      onSelectWeek(selectedWeekNumber + 1);
+    if (currentWeekIndex !== -1 && currentWeekIndex < program.weeks.length - 1) {
+      onSelectWeek(program.weeks[currentWeekIndex + 1].week_number);
     }
   };
+
+  // Determine if navigation buttons should be disabled
+  const isPrevDisabled = currentWeekIndex <= 0;
+  const isNextDisabled = currentWeekIndex === -1 || currentWeekIndex >= program.weeks.length - 1;
 
   return (
     <div className="space-y-4">
@@ -79,7 +88,7 @@ export function WeeklyCalendar({
           variant="ghost"
           size="icon"
           onClick={goToPrevWeek}
-          disabled={selectedWeekNumber === 1}
+          disabled={isPrevDisabled}
           className="flex-shrink-0"
           aria-label="Previous week"
         >
@@ -111,7 +120,7 @@ export function WeeklyCalendar({
           variant="ghost"
           size="icon"
           onClick={goToNextWeek}
-          disabled={selectedWeekNumber >= program.weeks.length}
+          disabled={isNextDisabled}
           className="flex-shrink-0"
           aria-label="Next week"
         >
