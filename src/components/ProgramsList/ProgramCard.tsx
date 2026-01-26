@@ -9,6 +9,7 @@ import {
   Clock,
   Dumbbell,
   Eye,
+  Loader2,
   MoreHorizontal,
   Pause,
   Play,
@@ -36,11 +37,12 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { Card } from '../ui/card';
-import type { TrainingProgram, ProgramStatus } from '../../types/training-program';
+import type { TrainingProgram } from '../../types/training-program';
 import { STATUS_LABELS } from '../../types/training-program';
 
 interface ProgramCardProps {
   program: TrainingProgram;
+  loadingAction?: string;
   onView: () => void;
   onActivate: () => void;
   onPause: () => void;
@@ -49,6 +51,7 @@ interface ProgramCardProps {
 
 export function ProgramCard({
   program,
+  loadingAction,
   onView,
   onActivate,
   onPause,
@@ -61,6 +64,7 @@ export function ProgramCard({
     : 0;
 
   const statusConfig = STATUS_LABELS[program.status];
+  const programName = program.name || 'Untitled Program';
 
   // Format date helper
   const formatDate = (dateString?: string) => {
@@ -70,6 +74,14 @@ export function ProgramCard({
       day: 'numeric',
       year: 'numeric',
     });
+  };
+
+  // Handle keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onView();
+    }
   };
 
   // Render status-specific content
@@ -86,7 +98,10 @@ export function ProgramCard({
                   Week {program.current_week} of {program.duration_weeks}
                 </span>
               </div>
-              <Progress value={progress} />
+              <Progress
+                value={progress}
+                aria-label={`Program progress: ${progress}%`}
+              />
             </div>
             {/* Next workout info */}
             <div className="text-sm text-muted-foreground">
@@ -140,7 +155,11 @@ export function ProgramCard({
                   Week {program.current_week} of {program.duration_weeks}
                 </span>
               </div>
-              <Progress value={progress} className="opacity-60" />
+              <Progress
+                value={progress}
+                className="opacity-60"
+                aria-label={`Program progress: ${progress}% (paused)`}
+              />
             </div>
           </>
         );
@@ -152,6 +171,8 @@ export function ProgramCard({
 
   // Render status-specific actions
   const renderActions = () => {
+    const isLoading = !!loadingAction;
+
     switch (program.status) {
       case 'active':
         return (
@@ -163,8 +184,13 @@ export function ProgramCard({
             variant="outline"
             size="sm"
             className="gap-1.5"
+            disabled={isLoading}
           >
-            <Pause className="w-3.5 h-3.5" />
+            {loadingAction === 'pause' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Pause className="w-3.5 h-3.5" />
+            )}
             Pause
           </Button>
         );
@@ -179,8 +205,13 @@ export function ProgramCard({
             }}
             size="sm"
             className="gap-1.5"
+            disabled={isLoading}
           >
-            <Play className="w-3.5 h-3.5" />
+            {loadingAction === 'activate' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Play className="w-3.5 h-3.5" />
+            )}
             Activate
           </Button>
         );
@@ -209,8 +240,12 @@ export function ProgramCard({
   return (
     <>
       <Card
-        className="p-4 cursor-pointer hover:bg-muted/50 transition-colors border-l-4 border-l-primary"
+        className="p-4 cursor-pointer hover:bg-muted/50 transition-colors border-l-4 border-l-primary focus:ring-2 focus:ring-primary focus:outline-none"
         onClick={onView}
+        onKeyDown={handleKeyDown}
+        tabIndex={0}
+        role="button"
+        aria-label={`View program: ${programName}`}
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -219,7 +254,7 @@ export function ProgramCard({
               <Sparkles className="w-5 h-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-semibold truncate">{program.name || 'Untitled Program'}</h3>
+              <h3 className="font-semibold truncate">{programName}</h3>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Dumbbell className="w-3 h-3" />
@@ -245,6 +280,7 @@ export function ProgramCard({
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                 <MoreHorizontal className="w-4 h-4" />
+                <span className="sr-only">More options</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -253,13 +289,13 @@ export function ProgramCard({
                 View Details
               </DropdownMenuItem>
               {program.status === 'active' && (
-                <DropdownMenuItem onClick={onPause}>
+                <DropdownMenuItem onClick={onPause} disabled={!!loadingAction}>
                   <Pause className="w-4 h-4 mr-2" />
                   Pause Program
                 </DropdownMenuItem>
               )}
               {(program.status === 'draft' || program.status === 'paused') && (
-                <DropdownMenuItem onClick={onActivate}>
+                <DropdownMenuItem onClick={onActivate} disabled={!!loadingAction}>
                   <Play className="w-4 h-4 mr-2" />
                   Activate Program
                 </DropdownMenuItem>
@@ -271,6 +307,7 @@ export function ProgramCard({
                   setShowDeleteDialog(true);
                 }}
                 className="text-destructive focus:text-destructive"
+                disabled={!!loadingAction}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete Program
@@ -286,7 +323,7 @@ export function ProgramCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Program?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{program.name}" and all its scheduled
+              This will permanently delete {program.name ? `"${program.name}"` : 'this program'} and all its scheduled
               workouts. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

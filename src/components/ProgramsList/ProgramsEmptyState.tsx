@@ -4,8 +4,7 @@
 
 import { FolderOpen, Sparkles, CheckCircle2, FileText } from 'lucide-react';
 import { Button } from '../ui/button';
-
-type StatusFilter = 'all' | 'active' | 'draft' | 'completed';
+import type { StatusFilter } from './ProgramsFilterBar';
 
 interface ProgramsEmptyStateProps {
   statusFilter: StatusFilter;

@@ -37,6 +37,9 @@ export function ProgramsList({ userId, onViewProgram }: ProgramsListProps) {
   // Modal state
   const [showWizard, setShowWizard] = useState(false);
 
+  // Track loading state per card action
+  const [loadingActions, setLoadingActions] = useState<Record<string, string>>({});
+
   // Fetch programs
   const loadPrograms = useCallback(async () => {
     try {
@@ -92,11 +95,12 @@ export function ProgramsList({ userId, onViewProgram }: ProgramsListProps) {
         case 'name':
           return a.name.localeCompare(b.name);
         case 'progress': {
-          // Guard against division by zero
-          if (a.duration_weeks === 0 || b.duration_weeks === 0) return 0;
-          const progressA = (a.current_week - 1) / a.duration_weeks;
-          const progressB = (b.current_week - 1) / b.duration_weeks;
-          return progressB - progressA; // Higher progress first
+          // Calculate progress with clamping to avoid edge cases
+          const getProgress = (p: TrainingProgram) => {
+            if (p.duration_weeks === 0) return 0;
+            return Math.max(0, Math.min(1, (p.current_week - 1) / p.duration_weeks));
+          };
+          return getProgress(b) - getProgress(a); // Higher progress first
         }
         case 'updated_at':
         default:
@@ -107,62 +111,101 @@ export function ProgramsList({ userId, onViewProgram }: ProgramsListProps) {
     return filtered;
   }, [programs, statusFilter, sortBy]);
 
-  // Handle status updates
+  // Helper to set/clear loading action
+  const setActionLoading = (programId: string, action: string | null) => {
+    if (action) {
+      setLoadingActions((prev) => ({ ...prev, [programId]: action }));
+    } else {
+      setLoadingActions((prev) => {
+        const { [programId]: _, ...rest } = prev;
+        return rest;
+      });
+    }
+  };
+
+  // Handle status updates with optimistic updates and rollback
   const handleActivate = async (programId: string) => {
+    const originalPrograms = programs;
+    setActionLoading(programId, 'activate');
+
+    // Optimistic update
+    setPrograms((prev) =>
+      prev.map((p) =>
+        p.id === programId
+          ? { ...p, status: 'active' as ProgramStatus, started_at: new Date().toISOString() }
+          : p
+      )
+    );
+
     try {
       const success = await updateProgramStatus(programId, userId, 'active');
       if (success) {
-        setPrograms((prev) =>
-          prev.map((p) =>
-            p.id === programId
-              ? { ...p, status: 'active' as ProgramStatus, started_at: new Date().toISOString() }
-              : p
-          )
-        );
         toast.success('Program activated');
       } else {
+        setPrograms(originalPrograms); // Rollback
         toast.error('Failed to activate program');
       }
     } catch (err) {
+      setPrograms(originalPrograms); // Rollback
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Activate failed:', err);
       toast.error(`Failed to activate program: ${message}`);
+    } finally {
+      setActionLoading(programId, null);
     }
   };
 
   const handlePause = async (programId: string) => {
+    const originalPrograms = programs;
+    setActionLoading(programId, 'pause');
+
+    // Optimistic update
+    setPrograms((prev) =>
+      prev.map((p) =>
+        p.id === programId ? { ...p, status: 'paused' as ProgramStatus } : p
+      )
+    );
+
     try {
       const success = await updateProgramStatus(programId, userId, 'paused');
       if (success) {
-        setPrograms((prev) =>
-          prev.map((p) =>
-            p.id === programId ? { ...p, status: 'paused' as ProgramStatus } : p
-          )
-        );
         toast.success('Program paused');
       } else {
+        setPrograms(originalPrograms); // Rollback
         toast.error('Failed to pause program');
       }
     } catch (err) {
+      setPrograms(originalPrograms); // Rollback
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Pause failed:', err);
       toast.error(`Failed to pause program: ${message}`);
+    } finally {
+      setActionLoading(programId, null);
     }
   };
 
   const handleDelete = async (programId: string) => {
+    const originalPrograms = programs;
+    setActionLoading(programId, 'delete');
+
+    // Optimistic update
+    setPrograms((prev) => prev.filter((p) => p.id !== programId));
+
     try {
       const success = await deleteTrainingProgram(programId, userId);
       if (success) {
-        setPrograms((prev) => prev.filter((p) => p.id !== programId));
         toast.success('Program deleted');
       } else {
+        setPrograms(originalPrograms); // Rollback
         toast.error('Failed to delete program');
       }
     } catch (err) {
+      setPrograms(originalPrograms); // Rollback
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Delete failed:', err);
       toast.error(`Failed to delete program: ${message}`);
+    } finally {
+      setActionLoading(programId, null);
     }
   };
 
@@ -244,6 +287,7 @@ export function ProgramsList({ userId, onViewProgram }: ProgramsListProps) {
             <ProgramCard
               key={program.id}
               program={program}
+              loadingAction={loadingActions[program.id]}
               onView={() => onViewProgram(program.id)}
               onActivate={() => handleActivate(program.id)}
               onPause={() => handlePause(program.id)}
