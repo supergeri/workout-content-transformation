@@ -100,6 +100,7 @@ interface UnifiedWorkoutsProps {
   onLoadWorkout: (item: WorkoutHistoryItem) => void;
   onDeleteWorkout: (id: string) => void;
   onBulkDeleteWorkouts?: (ids: string[]) => Promise<void> | void;
+  onViewProgram?: (programId: string) => void;
 }
 
 // =============================================================================
@@ -174,6 +175,7 @@ export function UnifiedWorkouts({
   onLoadWorkout,
   onDeleteWorkout,
   onBulkDeleteWorkouts,
+  onViewProgram,
 }: UnifiedWorkoutsProps) {
   // Loading and data state
   const [isLoading, setIsLoading] = useState(true);
@@ -998,6 +1000,7 @@ export function UnifiedWorkouts({
             profileId={profileId}
             workouts={allWorkouts}
             onLoadWorkout={handleLoadUnified}
+            onViewProgram={onViewProgram}
           />
 
           {/* Workout List */}
