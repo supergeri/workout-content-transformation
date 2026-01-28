@@ -160,3 +160,68 @@ export const ACCENT_OPTIONS = [
   { value: 'en-NG', label: 'Nigerian English' },
   { value: 'en', label: 'Other accented English' },
 ];
+
+// Audio Transcription API (AMA-435)
+
+export interface TranscriptionResult {
+  success: boolean;
+  text: string;
+  confidence: number;
+  provider: string;
+  language?: string;
+  duration_seconds?: number;
+  corrections_applied?: number;
+}
+
+export interface TranscribeOptions {
+  language?: string;
+  keywords?: string[];
+}
+
+/**
+ * Convert a Blob to a base64 string (without data URL prefix)
+ */
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      // Remove the "data:audio/webm;base64," prefix
+      const base64 = dataUrl.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Transcribe audio using the backend /voice/transcribe endpoint.
+ * Uses Deepgram with fitness vocabulary boosting and user's personal corrections.
+ */
+export async function transcribeAudio(
+  audioBlob: Blob,
+  options?: TranscribeOptions
+): Promise<TranscriptionResult> {
+  const base64 = await blobToBase64(audioBlob);
+
+  const response = await authenticatedFetch(`${INGESTOR_API_URL}/voice/transcribe`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      audio_base64: base64,
+      provider: 'deepgram',
+      language: options?.language ?? 'en-US',
+      keywords: options?.keywords,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `Transcription failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}

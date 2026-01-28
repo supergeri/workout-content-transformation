@@ -1,0 +1,334 @@
+/**
+ * useVoiceInput — React hook for voice input with Deepgram primary, Web Speech API fallback.
+ *
+ * State machine: idle -> requesting -> recording -> processing -> idle
+ *                                         |
+ *                                         v
+ *                                       error
+ *
+ * Features:
+ * - MediaRecorder with audio/webm;codecs=opus
+ * - 60-second max recording limit
+ * - Fallback to Web Speech API on Deepgram failure
+ * - Feature detection for unsupported browsers
+ */
+
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { transcribeAudio, type TranscriptionResult } from '../lib/voice-api';
+
+export type VoiceInputState = 'idle' | 'requesting' | 'recording' | 'processing' | 'error';
+
+export interface UseVoiceInputReturn {
+  state: VoiceInputState;
+  transcript: string;
+  confidence: number;
+  error: string | null;
+  isSupported: boolean;
+  startRecording: () => Promise<void>;
+  stopRecording: () => void;
+  cancelRecording: () => void;
+  clearTranscript: () => void;
+}
+
+interface UseVoiceInputOptions {
+  maxDurationMs?: number;
+  onTranscript?: (text: string, confidence: number) => void;
+  language?: string;
+}
+
+const DEFAULT_MAX_DURATION_MS = 60_000; // 60 seconds
+const MIN_CONFIDENCE_THRESHOLD = 0.5;
+
+// Check if the browser supports the required APIs
+function checkBrowserSupport(): boolean {
+  return !!(
+    typeof navigator !== 'undefined' &&
+    navigator.mediaDevices &&
+    navigator.mediaDevices.getUserMedia &&
+    typeof MediaRecorder !== 'undefined'
+  );
+}
+
+// Check if Web Speech API is available
+function checkWebSpeechSupport(): boolean {
+  return !!(
+    typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+  );
+}
+
+/**
+ * Fallback transcription using Web Speech API
+ */
+async function transcribeWithWebSpeech(language: string): Promise<{ text: string; confidence: number }> {
+  return new Promise((resolve, reject) => {
+    const SpeechRecognition =
+      (window as unknown as { SpeechRecognition?: typeof window.SpeechRecognition }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      reject(new Error('Web Speech API not supported'));
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = language;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    let resolved = false;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      if (resolved) return;
+      resolved = true;
+      const result = event.results[0];
+      if (result) {
+        resolve({
+          text: result[0].transcript,
+          confidence: result[0].confidence,
+        });
+      } else {
+        reject(new Error('No speech detected'));
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (resolved) return;
+      resolved = true;
+      reject(new Error(`Speech recognition error: ${event.error}`));
+    };
+
+    recognition.onend = () => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('No speech detected'));
+      }
+    };
+
+    recognition.start();
+
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        recognition.stop();
+        reject(new Error('Speech recognition timeout'));
+      }
+    }, 10_000);
+  });
+}
+
+export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInputReturn {
+  const { maxDurationMs = DEFAULT_MAX_DURATION_MS, onTranscript, language = 'en-US' } = options;
+
+  const [state, setState] = useState<VoiceInputState>('idle');
+  const [transcript, setTranscript] = useState('');
+  const [confidence, setConfidence] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSupported = checkBrowserSupport();
+  const hasWebSpeech = checkWebSpeechSupport();
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  const cleanup = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
+  }, []);
+
+  const processTranscription = useCallback(
+    async (audioBlob: Blob) => {
+      setState('processing');
+      setError(null);
+
+      let result: TranscriptionResult | null = null;
+      let usedFallback = false;
+
+      // Try Deepgram first
+      try {
+        result = await transcribeAudio(audioBlob, { language });
+        if (result.success && result.confidence >= MIN_CONFIDENCE_THRESHOLD) {
+          setTranscript(result.text);
+          setConfidence(result.confidence);
+          onTranscript?.(result.text, result.confidence);
+          setState('idle');
+          return;
+        }
+      } catch (err) {
+        console.warn('Deepgram transcription failed, trying Web Speech API fallback:', err);
+      }
+
+      // Fall back to Web Speech API if Deepgram failed or low confidence
+      if (hasWebSpeech) {
+        try {
+          usedFallback = true;
+          const fallbackResult = await transcribeWithWebSpeech(language);
+          setTranscript(fallbackResult.text);
+          setConfidence(fallbackResult.confidence);
+          onTranscript?.(fallbackResult.text, fallbackResult.confidence);
+          setState('idle');
+          return;
+        } catch (fallbackErr) {
+          console.warn('Web Speech API fallback also failed:', fallbackErr);
+        }
+      }
+
+      // If Deepgram returned low confidence but didn't error, use that result
+      if (result && result.success) {
+        setTranscript(result.text);
+        setConfidence(result.confidence);
+        onTranscript?.(result.text, result.confidence);
+        setState('idle');
+        return;
+      }
+
+      // All options exhausted
+      const errorMessage = usedFallback
+        ? 'Voice transcription failed. Please try again or type your message.'
+        : 'Voice transcription failed. Please check your network connection and try again.';
+      setError(errorMessage);
+      setState('error');
+    },
+    [language, onTranscript, hasWebSpeech],
+  );
+
+  const startRecording = useCallback(async () => {
+    if (!isSupported) {
+      setError('Voice input is not supported in this browser');
+      setState('error');
+      return;
+    }
+
+    setState('requesting');
+    setError(null);
+    setTranscript('');
+    setConfidence(0);
+    audioChunksRef.current = [];
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      streamRef.current = stream;
+
+      // Prefer webm/opus, fall back to webm or whatever is supported
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/mp4';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        cleanup();
+
+        if (audioBlob.size > 0) {
+          processTranscription(audioBlob);
+        } else {
+          setError('No audio recorded. Please try again.');
+          setState('error');
+        }
+      };
+
+      mediaRecorder.onerror = () => {
+        cleanup();
+        setError('Recording error. Please try again.');
+        setState('error');
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      setState('recording');
+
+      // Set max duration timeout
+      timeoutRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      }, maxDurationMs);
+    } catch (err) {
+      cleanup();
+      const message =
+        err instanceof Error && err.name === 'NotAllowedError'
+          ? 'Microphone access denied. Please allow microphone access in your browser settings.'
+          : 'Failed to access microphone. Please check your device settings.';
+      setError(message);
+      setState('error');
+    }
+  }, [isSupported, maxDurationMs, cleanup, processTranscription]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      // Remove the onstop handler to prevent processing
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    cleanup();
+    setState('idle');
+    setError(null);
+  }, [cleanup]);
+
+  const clearTranscript = useCallback(() => {
+    setTranscript('');
+    setConfidence(0);
+    setError(null);
+    if (state === 'error') {
+      setState('idle');
+    }
+  }, [state]);
+
+  return {
+    state,
+    transcript,
+    confidence,
+    error,
+    isSupported,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    clearTranscript,
+  };
+}
