@@ -131,17 +131,25 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const isSupported = checkBrowserSupport();
   const hasWebSpeech = checkWebSpeechSupport();
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      // Abort any in-flight transcription requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
     };
   }, []);
@@ -161,15 +169,24 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
   const processTranscription = useCallback(
     async (audioBlob: Blob) => {
+      // Guard against unmounted component
+      if (!isMountedRef.current) return;
+
       setState('processing');
       setError(null);
+
+      // Create abort controller for this transcription request
+      abortControllerRef.current = new AbortController();
+      const { signal } = abortControllerRef.current;
 
       let result: TranscriptionResult | null = null;
       let usedFallback = false;
 
       // Try Deepgram first
       try {
-        result = await transcribeAudio(audioBlob, { language });
+        result = await transcribeAudio(audioBlob, { language, signal });
+        if (!isMountedRef.current) return; // Check after async operation
+
         if (result.success && result.confidence >= MIN_CONFIDENCE_THRESHOLD) {
           setTranscript(result.text);
           setConfidence(result.confidence);
@@ -178,14 +195,23 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           return;
         }
       } catch (err) {
+        // Don't log abort errors as warnings
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
         console.warn('Deepgram transcription failed, trying Web Speech API fallback:', err);
       }
+
+      // Guard against unmounted component after catch
+      if (!isMountedRef.current) return;
 
       // Fall back to Web Speech API if Deepgram failed or low confidence
       if (hasWebSpeech) {
         try {
           usedFallback = true;
           const fallbackResult = await transcribeWithWebSpeech(language);
+          if (!isMountedRef.current) return; // Check after async operation
+
           setTranscript(fallbackResult.text);
           setConfidence(fallbackResult.confidence);
           onTranscript?.(fallbackResult.text, fallbackResult.confidence);
@@ -195,6 +221,9 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           console.warn('Web Speech API fallback also failed:', fallbackErr);
         }
       }
+
+      // Guard against unmounted component
+      if (!isMountedRef.current) return;
 
       // If Deepgram returned low confidence but didn't error, use that result
       if (result && result.success) {
@@ -301,6 +330,11 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   }, []);
 
   const cancelRecording = useCallback(() => {
+    // Abort any in-flight transcription request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     if (mediaRecorderRef.current?.state === 'recording') {
       // Remove the onstop handler to prevent processing
       mediaRecorderRef.current.onstop = null;

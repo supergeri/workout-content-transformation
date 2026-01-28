@@ -11,6 +11,17 @@ import { authenticatedFetch } from './authenticated-fetch';
 
 const INGESTOR_API_URL = import.meta.env.VITE_INGESTOR_API_URL || 'http://localhost:8000';
 
+// Security: Validate HTTPS in production for endpoints that transmit sensitive data
+function validateSecureTransport(url: string): void {
+  const isProd = import.meta.env.PROD;
+  const isHttps = url.startsWith('https://');
+  const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
+
+  if (isProd && !isHttps && !isLocalhost) {
+    throw new Error('Transcription API must use HTTPS in production to protect audio data');
+  }
+}
+
 // Types
 export type TranscriptionProvider = 'whisperkit' | 'deepgram' | 'assemblyai' | 'smart';
 
@@ -176,6 +187,8 @@ export interface TranscriptionResult {
 export interface TranscribeOptions {
   language?: string;
   keywords?: string[];
+  /** AbortSignal for cancelling in-flight requests */
+  signal?: AbortSignal;
 }
 
 /**
@@ -203,9 +216,14 @@ export async function transcribeAudio(
   audioBlob: Blob,
   options?: TranscribeOptions
 ): Promise<TranscriptionResult> {
+  const transcribeUrl = `${INGESTOR_API_URL}/voice/transcribe`;
+
+  // Validate secure transport for sensitive audio data
+  validateSecureTransport(transcribeUrl);
+
   const base64 = await blobToBase64(audioBlob);
 
-  const response = await authenticatedFetch(`${INGESTOR_API_URL}/voice/transcribe`, {
+  const response = await authenticatedFetch(transcribeUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -216,6 +234,7 @@ export async function transcribeAudio(
       language: options?.language ?? 'en-US',
       keywords: options?.keywords,
     }),
+    signal: options?.signal,
   });
 
   if (!response.ok) {
