@@ -1,16 +1,18 @@
 /**
- * ChatInput — text input with auto-resize, send button, and rate limit indicator.
+ * ChatInput — text input with auto-resize, send button, voice input, and rate limit indicator.
  *
  * - Controlled textarea with auto-resize
  * - Send button (disabled when empty or streaming)
- * - Mic icon button (placeholder for AMA-435 voice input)
+ * - Voice input button (AMA-435) with Deepgram primary, Web Speech API fallback
  * - Enter to send, Shift+Enter for newline
  * - Rate limit indicator (X/50 messages)
  */
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent, ChangeEvent } from 'react';
-import { Send, Mic } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { Button } from '../ui/button';
+import { VoiceInputButton } from './VoiceInputButton';
+import { useVoiceInput } from '../../hooks/useVoiceInput';
 import type { RateLimitInfo } from '../../types/chat';
 
 interface ChatInputProps {
@@ -23,6 +25,19 @@ interface ChatInputProps {
 export function ChatInput({ onSend, isStreaming, rateLimitInfo, autoFocus }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Voice input hook
+  const voiceInput = useVoiceInput({
+    onTranscript: (transcript) => {
+      // Append transcript to existing text (with space if needed)
+      setText((prev) => {
+        const newText = prev.trim() ? `${prev.trim()} ${transcript}` : transcript;
+        return newText;
+      });
+      // Focus the textarea so user can edit before sending
+      textareaRef.current?.focus();
+    },
+  });
 
   // Auto-focus when requested (e.g., panel opens)
   useEffect(() => {
@@ -83,18 +98,17 @@ export function ChatInput({ onSend, isStreaming, rateLimitInfo, autoFocus }: Cha
           data-testid="chat-input-textarea"
         />
 
-        {/* Mic placeholder (AMA-435) */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0"
-          disabled
-          title="Voice input coming soon"
-          aria-label="Voice input"
-          data-testid="chat-mic-button"
-        >
-          <Mic className="w-4 h-4" />
-        </Button>
+        {/* Voice input button (AMA-435) */}
+        <VoiceInputButton
+          state={voiceInput.state}
+          isSupported={voiceInput.isSupported}
+          error={voiceInput.error}
+          confidence={voiceInput.confidence}
+          disabled={isStreaming}
+          onStart={voiceInput.startRecording}
+          onStop={voiceInput.stopRecording}
+          onCancel={voiceInput.cancelRecording}
+        />
 
         {/* Send button */}
         <Button

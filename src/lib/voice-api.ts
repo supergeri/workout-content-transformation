@@ -11,6 +11,17 @@ import { authenticatedFetch } from './authenticated-fetch';
 
 const INGESTOR_API_URL = import.meta.env.VITE_INGESTOR_API_URL || 'http://localhost:8000';
 
+// Security: Validate HTTPS in production for endpoints that transmit sensitive data
+function validateSecureTransport(url: string): void {
+  const isProd = import.meta.env.PROD;
+  const isHttps = url.startsWith('https://');
+  const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
+
+  if (isProd && !isHttps && !isLocalhost) {
+    throw new Error('Transcription API must use HTTPS in production to protect audio data');
+  }
+}
+
 // Types
 export type TranscriptionProvider = 'whisperkit' | 'deepgram' | 'assemblyai' | 'smart';
 
@@ -160,3 +171,76 @@ export const ACCENT_OPTIONS = [
   { value: 'en-NG', label: 'Nigerian English' },
   { value: 'en', label: 'Other accented English' },
 ];
+
+// Audio Transcription API (AMA-435)
+
+export interface TranscriptionResult {
+  success: boolean;
+  text: string;
+  confidence: number;
+  provider: string;
+  language?: string;
+  duration_seconds?: number;
+  corrections_applied?: number;
+}
+
+export interface TranscribeOptions {
+  language?: string;
+  keywords?: string[];
+  /** AbortSignal for cancelling in-flight requests */
+  signal?: AbortSignal;
+}
+
+/**
+ * Convert a Blob to a base64 string (without data URL prefix)
+ */
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      // Remove the "data:audio/webm;base64," prefix
+      const base64 = dataUrl.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Transcribe audio using the backend /voice/transcribe endpoint.
+ * Uses Deepgram with fitness vocabulary boosting and user's personal corrections.
+ */
+export async function transcribeAudio(
+  audioBlob: Blob,
+  options?: TranscribeOptions
+): Promise<TranscriptionResult> {
+  const transcribeUrl = `${INGESTOR_API_URL}/voice/transcribe`;
+
+  // Validate secure transport for sensitive audio data
+  validateSecureTransport(transcribeUrl);
+
+  const base64 = await blobToBase64(audioBlob);
+
+  const response = await authenticatedFetch(transcribeUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      audio_base64: base64,
+      provider: 'deepgram',
+      language: options?.language ?? 'en-US',
+      keywords: options?.keywords,
+    }),
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `Transcription failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
